@@ -1,0 +1,11 @@
+# Opportunity Discovery Engine — host crontab (VPS).
+# Install on the VPS with:  crontab cron/crontab
+# Assumes the repo lives at /opt/discovery-engine and Docker Compose is used.
+#
+# Collectors are idempotent, so overlapping or re-run jobs never duplicate data.
+
+# Daily full harvest at 04:17 UTC (off the hour to dodge API rush).
+17 4 * * *  cd /opt/discovery-engine && docker compose run --rm app ode collect >> /var/log/ode-collect.log 2>&1
+
+# Lightweight Wikipedia-only refresh at 16:17 UTC (cheap, keeps demand fresh).
+17 16 * * * cd /opt/discovery-engine && docker compose run --rm app ode collect --source wikipedia >> /var/log/ode-collect.log 2>&1

@@ -1,0 +1,93 @@
+# ==================================================================
+# Opportunity Discovery Engine — runtime config
+# Everything tunable lives here, not in code (spec requirement).
+# ==================================================================
+
+# Markets to run every collector across.
+# Phase 1 starts lean (en + de). Add the rest when the pipeline is proven.
+# Full target set is listed under `all_markets` for easy promotion later.
+markets:
+  - en-US
+  - de-DE
+
+all_markets: [en-US, en-GB, de-DE, ja-JP, pt-BR, es-ES, fr-FR, it-IT, nl-NL, pl-PL]
+
+# Wikipedia project overrides where it isn't simply "<lang>.wikipedia".
+wiki_project_overrides:
+  en-US: en.wikipedia
+  en-GB: en.wikipedia
+  de-DE: de.wikipedia
+  ja-JP: ja.wikipedia
+  pt-BR: pt.wikipedia
+  es-ES: es.wikipedia
+  fr-FR: fr.wikipedia
+  it-IT: it.wikipedia
+  nl-NL: nl.wikipedia
+  pl-PL: pl.wikipedia
+
+# Seed topics bootstrap the harvest. Collectors expand from these.
+# Keep them intent-rich (how-to / build / automate) per the monetization rule.
+# `wiki` = exact Wikipedia article titles (per the English article; collectors
+# resolve per-language via langlinks is a Phase 5 nicety — for now we use the
+# same title and skip markets where the article 404s).
+seeds:
+  queries:
+    - "n8n automation"
+    - "local llm setup"
+    - "home assistant automation"
+    - "obsidian plugin"
+    - "self hosting"
+    - "raspberry pi project"
+    - "notion template"
+    - "docker compose tutorial"
+  wiki_articles:
+    - "Home_Assistant_(software)"
+    - "Obsidian_(software)"
+    - "Self-hosting_(web_services)"
+    - "Raspberry_Pi"
+    - "Large_language_model"
+
+# How far back a fresh collect reaches (days). Daily cron uses a small window.
+lookback_days:
+  wikipedia: 400      # ~13 months — enough for 12-month saturation forecast
+  youtube: 180
+  reddit: 90
+  hackernews: 90
+
+# Per-source rate limits (requests/sec, burst). Throttle hard — pytrends/
+# autocomplete WILL get blocked; the safe sources still deserve politeness.
+rate_limits:
+  wikipedia:  {rate: 50.0, burst: 50}   # Wikimedia asks < 100 req/s; stay well under
+  youtube:    {rate: 5.0,  burst: 5}
+  reddit:     {rate: 1.5,  burst: 5}    # ~100/min OAuth limit
+  hackernews: {rate: 5.0,  burst: 10}
+
+# Persisted daily quota caps. Collectors REFUSE calls that would exceed these
+# rather than failing mid-run. null = untracked/unlimited.
+quotas:
+  youtube: 9000        # keep headroom under the 10k/day hard limit
+  reddit: null
+  wikipedia: null
+  hackernews: null
+
+# YouTube unit costs (Data API v3 billing). Used for quota accounting.
+youtube_unit_cost:
+  search: 100
+  videos: 1
+  channels: 1
+
+# HTTP behaviour
+http:
+  timeout_seconds: 30
+  max_retries: 4
+  backoff_base_seconds: 2.0   # 2, 4, 8, 16
+
+# Phase-2 scoring thresholds live here too (not used until Phase 2) so the
+# config shape is stable. momentum_* mirror the spec's phase gates.
+scoring:
+  min_series_points: 60
+  spike_persist_days: 5
+  momentum:
+    velocity_threshold: 0.002
+    breakout_accel: 0.3
+    growing_accel: -0.1

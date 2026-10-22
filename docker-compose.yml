@@ -1,0 +1,36 @@
+# VPS stack for the Opportunity Discovery Engine (Phase 1).
+#   docker compose up -d db          # start TimescaleDB
+#   docker compose run --rm app ode initdb
+#   docker compose run --rm app ode collect
+# Daily scheduling is host cron calling the line above (see cron/crontab).
+
+services:
+  db:
+    image: timescale/timescaledb:2.17.2-pg16
+    environment:
+      POSTGRES_USER: ode
+      POSTGRES_PASSWORD: ode
+      POSTGRES_DB: ode
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ode -d ode"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    env_file:
+      - .env
+    environment:
+      # Override .env's localhost DSN to reach the db service on the compose net
+      DATABASE_URL: postgresql://ode:ode@db:5432/ode
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
