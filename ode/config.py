@@ -1,11 +1,14 @@
 """Config loading: YAML (tunables) + environment (secrets).
 
-Secrets NEVER live in YAML. Tunables NEVER live in code.
+Secrets NEVER live in YAML. Tunables NEVER live in code. The YAML is
+validated on load so a typo fails fast with a clear message instead of
+silently producing bad data at 4am.
 """
 
 from __future__ import annotations
 
 import os
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -13,12 +16,23 @@ from typing import Any
 import yaml
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from ode.models import Market
+from ode.models import Market, Seed
 from ode.ratelimit import RateLimit
 
-DEFAULT_CONFIG_PATH = Path(
-    os.environ.get("ODE_CONFIG", Path(__file__).resolve().parent.parent / "config" / "config.yaml")
-)
+_REPO_CONFIG = Path(__file__).resolve().parent.parent / "config" / "config.yaml"
+
+
+class ConfigError(ValueError):
+    """Raised when config.yaml is invalid."""
+
+
+def default_config_path() -> Path:
+    """ODE_CONFIG env > ./config/config.yaml > repo checkout's config."""
+    env = os.environ.get("ODE_CONFIG")
+    if env:
+        return Path(env)
+    cwd = Path.cwd() / "config" / "config.yaml"
+    return cwd if cwd.exists() else _REPO_CONFIG
 
 
 class Secrets(BaseSettings):
@@ -37,16 +51,67 @@ class Secrets(BaseSettings):
 
 
 class Config:
-    """Parsed YAML config with convenience accessors."""
+    """Parsed + validated YAML config with convenience accessors."""
 
     def __init__(self, data: dict[str, Any]) -> None:
-        self._d = data
-        self._wiki_overrides: dict[str, str] = data.get("wiki_project_overrides", {})
+        self._d = data or {}
+        self._wiki_overrides: dict[str, str] = self._d.get("wiki_project_overrides", {}) or {}
+        self._seeds = self._parse_seeds(self._d.get("seeds", []))
+        self._validate()
 
-    # -- markets --
+    # ---------- validation ----------
+    @staticmethod
+    def _parse_seeds(raw: Any) -> list[Seed]:
+        if raw in (None, []):
+            return []
+        if not isinstance(raw, list):
+            raise ConfigError("`seeds` must be a list of {key, name, wiki?, queries?}")
+        seeds: list[Seed] = []
+        seen: set[str] = set()
+        for i, s in enumerate(raw):
+            if not isinstance(s, dict) or not s.get("key"):
+                raise ConfigError(f"seeds[{i}] needs a `key`")
+            key = str(s["key"])
+            if not re.fullmatch(r"[a-z0-9_]+", key):
+                raise ConfigError(f"seeds[{i}].key {key!r} must be lowercase [a-z0-9_]")
+            if key in seen:
+                raise ConfigError(f"duplicate seed key {key!r}")
+            seen.add(key)
+            queries = s.get("queries") or {}
+            if not isinstance(queries, dict):
+                raise ConfigError(f"seeds[{i}].queries must map language -> query")
+            seeds.append(
+                Seed(
+                    key=key,
+                    name=str(s.get("name") or key),
+                    wiki=s.get("wiki"),
+                    queries={str(k).lower(): str(v) for k, v in queries.items() if v},
+                    hn=s.get("hn"),
+                )
+            )
+        return seeds
+
+    def _validate(self) -> None:
+        if not self.market_codes:
+            raise ConfigError("`markets` must list at least one market")
+        for code in self.market_codes:
+            try:
+                Market.parse(code, self._wiki_overrides)
+            except ValueError as exc:
+                raise ConfigError(str(exc)) from exc
+        for src, rl in (self._d.get("rate_limits") or {}).items():
+            if float(rl.get("rate", 0)) <= 0:
+                raise ConfigError(f"rate_limits.{src}.rate must be > 0")
+        for pat in self.discovery.get("exclude_title_patterns", []):
+            try:
+                re.compile(pat)
+            except re.error as exc:
+                raise ConfigError(f"bad exclude_title_patterns regex {pat!r}: {exc}") from exc
+
+    # ---------- markets ----------
     @property
     def market_codes(self) -> list[str]:
-        return list(self._d.get("markets", []))
+        return list(self._d.get("markets", []) or [])
 
     def markets(self) -> list[Market]:
         return [Market.parse(c, self._wiki_overrides) for c in self.market_codes]
@@ -54,56 +119,94 @@ class Config:
     def market(self, code: str) -> Market:
         return Market.parse(code, self._wiki_overrides)
 
-    # -- seeds --
+    # ---------- seeds ----------
     @property
-    def seed_queries(self) -> list[str]:
-        return list(self._d.get("seeds", {}).get("queries", []))
+    def seeds(self) -> list[Seed]:
+        return list(self._seeds)
 
-    @property
-    def seed_wiki_articles(self) -> list[str]:
-        return list(self._d.get("seeds", {}).get("wiki_articles", []))
+    def queries_for(self, market: Market) -> list[tuple[Seed, str]]:
+        """(seed, query) pairs in this market's language. Seeds without a query
+        in that language are skipped — an English query would pollute a German
+        market's signal."""
+        return [(s, s.queries[market.language]) for s in self._seeds if market.language in s.queries]
 
-    # -- per-source knobs --
+    # ---------- per-source knobs ----------
     def lookback_days(self, source: str) -> int:
-        return int(self._d.get("lookback_days", {}).get(source, 90))
+        return int((self._d.get("lookback_days") or {}).get(source, 90))
+
+    def overlap_days(self, source: str) -> int:
+        """Days re-fetched on incremental runs (late/revised upstream data)."""
+        return int((self._d.get("incremental_overlap_days") or {}).get(source, 2))
 
     def rate_limit(self, source: str) -> RateLimit:
-        rl = self._d.get("rate_limits", {}).get(source, {"rate": 1.0, "burst": 1})
+        rl = (self._d.get("rate_limits") or {}).get(source, {"rate": 1.0, "burst": 1})
         return RateLimit(rate=float(rl["rate"]), burst=int(rl.get("burst", 1)))
+
+    def concurrency(self, source: str) -> int:
+        return max(1, int((self._d.get("concurrency") or {}).get(source, 1)))
 
     @property
     def quotas(self) -> dict[str, int | None]:
-        return dict(self._d.get("quotas", {}))
+        return dict(self._d.get("quotas") or {})
 
     @property
     def youtube_unit_cost(self) -> dict[str, int]:
-        return dict(self._d.get("youtube_unit_cost", {"search": 100, "videos": 1, "channels": 1}))
+        return dict(
+            self._d.get("youtube_unit_cost") or {"search": 100, "videos": 1, "channels": 1}
+        )
 
-    # -- http --
+    @property
+    def youtube(self) -> dict[str, Any]:
+        return dict(self._d.get("youtube") or {})
+
+    @property
+    def reddit(self) -> dict[str, Any]:
+        return dict(self._d.get("reddit") or {})
+
+    def reddit_scope(self, market: Market) -> dict[str, Any] | None:
+        return (self.reddit.get("scopes") or {}).get(market.code)
+
+    @property
+    def discovery(self) -> dict[str, Any]:
+        return dict(self._d.get("discovery") or {})
+
+    # ---------- http ----------
+    @property
+    def _http(self) -> dict[str, Any]:
+        return self._d.get("http") or {}
+
     @property
     def http_timeout(self) -> float:
-        return float(self._d.get("http", {}).get("timeout_seconds", 30))
+        return float(self._http.get("timeout_seconds", 30))
 
     @property
     def http_max_retries(self) -> int:
-        return int(self._d.get("http", {}).get("max_retries", 4))
+        return int(self._http.get("max_retries", 4))
 
     @property
     def http_backoff_base(self) -> float:
-        return float(self._d.get("http", {}).get("backoff_base_seconds", 2.0))
+        return float(self._http.get("backoff_base_seconds", 2.0))
+
+    @property
+    def circuit_breaker_failures(self) -> int:
+        return int(self._http.get("circuit_breaker_failures", 10))
 
     @property
     def scoring(self) -> dict[str, Any]:
-        return dict(self._d.get("scoring", {}))
+        return dict(self._d.get("scoring") or {})
 
     def raw(self) -> dict[str, Any]:
         return self._d
 
 
 def load_config(path: Path | str | None = None) -> Config:
-    p = Path(path) if path else DEFAULT_CONFIG_PATH
-    with open(p, "r", encoding="utf-8") as fh:
-        return Config(yaml.safe_load(fh) or {})
+    p = Path(path) if path else default_config_path()
+    try:
+        with open(p, encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+    except FileNotFoundError as exc:
+        raise ConfigError(f"config not found at {p} (set ODE_CONFIG)") from exc
+    return Config(data)
 
 
 @lru_cache(maxsize=1)

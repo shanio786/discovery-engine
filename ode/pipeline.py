@@ -1,8 +1,10 @@
 """Harvest orchestration.
 
-Runs each enabled collector across each market, persists signals idempotently,
-and records every attempt in `collector_runs` (ok | skipped | error) with item
-and quota counts. A crash in one collector/market never aborts the others.
+`daily()` is the one entry point cron needs: apply schema -> discover ->
+collect, all under a Postgres advisory lock so overlapping jobs can't race.
+Every collector x market attempt is recorded in `collector_runs` as
+ok | partial | skipped | error, with item, error and quota counts. A failure
+in one collector or market never aborts the others.
 """
 
 from __future__ import annotations
@@ -14,81 +16,142 @@ import httpx
 from ode.collectors import COLLECTOR_CLASSES
 from ode.collectors.base import BaseCollector
 from ode.config import Config, Secrets
-from ode.db import Database, PgQuotaStore
+from ode.db import Database, DbState, PgQuotaStore
 from ode.logging import get_logger
 from ode.models import Market
 from ode.quota import QuotaTracker
+from ode.state import CollectorState
 
 log = get_logger(__name__)
 
-USER_AGENT = "ode-discovery-engine/0.1 (+https://github.com/shanio786/discovery-engine)"
+USER_AGENT = "ode-discovery-engine/0.2 (+https://github.com/shanio786/discovery-engine)"
+
+
+def http_client(config: Config) -> httpx.AsyncClient:
+    return httpx.AsyncClient(
+        timeout=config.http_timeout,
+        headers={"User-Agent": USER_AGENT},
+        follow_redirects=True,
+        limits=httpx.Limits(max_connections=32, max_keepalive_connections=16),
+    )
 
 
 async def run_one(db: Database, collector: BaseCollector, market: Market, config: Config) -> dict:
     """Run a single collector for a single market. Returns a summary dict."""
     run_id = await db.start_run(collector.name, market.code)
-    l = log.bind(collector=collector.name, market=market.code, run_id=run_id)
+    lg = log.bind(collector=collector.name, market=market.code, run_id=run_id)
+    base = {"collector": collector.name, "market": market.code}
 
-    enabled, reason = collector.is_enabled()
-    if not enabled:
-        l.info("collector.skipped", reason=reason)
-        await db.finish_run(run_id, status="skipped", detail={"reason": reason})
-        return {"collector": collector.name, "market": market.code, "status": "skipped"}
+    for check in (collector.is_enabled, lambda: collector.supports(market)):
+        ok, reason = check()
+        if not ok:
+            lg.info("collector.skipped", reason=reason)
+            await db.finish_run(run_id, status="skipped", detail={"reason": reason})
+            return {**base, "status": "skipped", "reason": reason}
 
     since = datetime.now(UTC) - timedelta(days=config.lookback_days(collector.name))
-    collector.last_quota_used = 0
+    collector.reset_run_stats()
     try:
         signals = await collector.collect(market, since)
         written = await db.upsert_signals(signals)
-        await db.finish_run(
-            run_id, status="ok", items=written, quota_used=collector.last_quota_used
-        )
-        l.info("collector.ok", items=written, quota_used=collector.last_quota_used)
-        return {"collector": collector.name, "market": market.code, "status": "ok",
-                "items": written}
     except Exception as exc:  # noqa: BLE001 - isolate failures per collector/market
-        l.error("collector.error", error=str(exc), exc_info=True)
-        await db.finish_run(
-            run_id, status="error", errors=1,
-            quota_used=collector.last_quota_used, detail={"error": str(exc)},
-        )
-        return {"collector": collector.name, "market": market.code, "status": "error",
-                "error": str(exc)}
+        lg.exception("collector.error", error=str(exc)[:300])
+        await db.finish_run(run_id, status="error", errors=collector.errors + 1,
+                            quota_used=collector.last_quota_used,
+                            detail={"error": str(exc)[:500]})
+        return {**base, "status": "error", "error": str(exc)[:200]}
+
+    if collector.skip_reason and not signals:
+        lg.info("collector.skipped", reason=collector.skip_reason)
+        await db.finish_run(run_id, status="skipped", detail={"reason": collector.skip_reason})
+        return {**base, "status": "skipped", "reason": collector.skip_reason}
+    if (collector.aborted or collector.errors) and not written:
+        status = "error"  # tried, failed, saved nothing: never report that as partial/ok
+    elif collector.partial:
+        status = "partial"
+    else:
+        status = "ok"
+    detail = {k: v for k, v in {"aborted": collector.aborted, "notes": collector.notes}.items() if v}
+    await db.finish_run(run_id, status=status, items=written, errors=collector.errors,
+                        quota_used=collector.last_quota_used, detail=detail or None)
+    lg.info("collector.done", status=status, items=written, errors=collector.errors,
+            quota_used=collector.last_quota_used)
+    return {**base, "status": status, "items": written, "errors": collector.errors,
+            **({"error": collector.aborted} if collector.aborted else {})}
 
 
 def build_collectors(
-    config: Config, secrets: Secrets, client: httpx.AsyncClient, quota: QuotaTracker,
+    config: Config,
+    secrets: Secrets,
+    client: httpx.AsyncClient,
+    quota: QuotaTracker,
+    state: CollectorState | None = None,
     only: list[str] | None = None,
 ) -> list[BaseCollector]:
-    collectors = []
-    for cls in COLLECTOR_CLASSES:
-        if only and cls.name not in only:
-            continue
-        collectors.append(cls(config, secrets, client, quota))
-    return collectors
+    if only:
+        known = {c.name for c in COLLECTOR_CLASSES}
+        unknown = set(only) - known
+        if unknown:
+            raise ValueError(f"unknown source(s) {sorted(unknown)}; known: {sorted(known)}")
+    return [
+        cls(config, secrets, client, quota, state)
+        for cls in COLLECTOR_CLASSES
+        if not only or cls.name in only
+    ]
+
+
+async def _collect(
+    db: Database, config: Config, secrets: Secrets, client: httpx.AsyncClient,
+    sources: list[str] | None, markets: list[str] | None,
+) -> list[dict]:
+    quota = QuotaTracker(PgQuotaStore(db), config.quotas)
+    market_objs = [config.market(m) for m in markets] if markets else config.markets()
+    collectors = build_collectors(config, secrets, client, quota, DbState(db), only=sources)
+    results: list[dict] = []
+    for collector in collectors:
+        for market in market_objs:
+            results.append(await run_one(db, collector, market, config))
+    return results
 
 
 async def harvest(
     config: Config, secrets: Secrets, *,
     sources: list[str] | None = None, markets: list[str] | None = None,
 ) -> list[dict]:
-    """Top-level entry: open DB + HTTP, run the matrix, return summaries."""
+    """Collect only (no discovery). Locked against concurrent runs."""
     db = await Database.connect(secrets.database_url)
-    results: list[dict] = []
     try:
-        quota = QuotaTracker(PgQuotaStore(db), config.quotas)
-        market_objs = (
-            [config.market(m) for m in markets] if markets else config.markets()
-        )
-        async with httpx.AsyncClient(
-            timeout=config.http_timeout,
-            headers={"User-Agent": USER_AGENT},
-            follow_redirects=True,
-        ) as client:
-            collectors = build_collectors(config, secrets, client, quota, only=sources)
-            for collector in collectors:
-                for market in market_objs:
-                    results.append(await run_one(db, collector, market, config))
+        async with db.harvest_lock():
+            await db.close_orphan_runs()
+            async with http_client(config) as client:
+                return await _collect(db, config, secrets, client, sources, markets)
     finally:
         await db.close()
-    return results
+
+
+async def discover(config: Config, secrets: Secrets, *, markets: list[str] | None = None) -> list[dict]:
+    from ode.discovery import Discoverer
+
+    db = await Database.connect(secrets.database_url)
+    try:
+        async with db.harvest_lock(), http_client(config) as client:
+            return await Discoverer(config, client, db).run(markets)
+    finally:
+        await db.close()
+
+
+async def daily(config: Config, secrets: Secrets) -> dict[str, list[dict]]:
+    """Schema -> discovery -> collection, under one lock. What cron runs."""
+    from ode.discovery import Discoverer
+
+    db = await Database.connect(secrets.database_url)
+    try:
+        async with db.harvest_lock():
+            await db.init_schema()
+            await db.close_orphan_runs()
+            async with http_client(config) as client:
+                disc = await Discoverer(config, client, db).run()
+                coll = await _collect(db, config, secrets, client, None, None)
+        return {"discovery": disc, "collect": coll}
+    finally:
+        await db.close()

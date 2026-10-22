@@ -11,6 +11,7 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+import httpx
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -71,16 +72,26 @@ class AsyncTokenBucket:
 
 
 class RetryableHTTPError(Exception):
-    """Raised by collectors for transient HTTP failures worth retrying."""
+    """Raised for transient HTTP failures worth retrying (429, 5xx, maxlag)."""
+
+
+# Transient failures worth retrying. httpx.ProxyError is deliberately NOT here:
+# a proxy/policy denial is permanent, and retrying it just burns minutes.
+RETRYABLE_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    RetryableHTTPError,
+    httpx.TimeoutException,
+    httpx.NetworkError,
+    httpx.RemoteProtocolError,
+)
 
 
 def with_backoff(max_attempts: int = 4, base_seconds: float = 2.0):
-    """Decorator: retry on RetryableHTTPError with exponential backoff.
+    """Decorator: retry transient failures with exponential backoff.
 
     base 2.0 -> waits ~2, 4, 8, 16s (spec's retry policy).
     """
     return retry(
-        retry=retry_if_exception_type(RetryableHTTPError),
+        retry=retry_if_exception_type(RETRYABLE_EXCEPTIONS),
         stop=stop_after_attempt(max_attempts),
         wait=wait_exponential(multiplier=base_seconds, min=base_seconds, max=60),
         reraise=True,

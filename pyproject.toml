@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ode"
-version = "0.1.0"
+version = "0.2.0"
 description = "Opportunity Discovery Engine — cross-platform demand arbitrage"
 requires-python = ">=3.11"
 dependencies = [
@@ -31,9 +31,13 @@ ode = "ode.cli:main"
 [tool.setuptools.packages.find]
 include = ["ode*"]
 
+[tool.setuptools.package-data]
+ode = ["sql/*.sql"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = ["db: needs a real Postgres/TimescaleDB (set ODE_TEST_DATABASE_URL)"]
 
 [tool.ruff]
 line-length = 100

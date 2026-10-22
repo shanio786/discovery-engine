@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      timescale:
+        image: timescale/timescaledb:2.17.2-pg16
+        env:
+          POSTGRES_USER: ode
+          POSTGRES_PASSWORD: ode
+          POSTGRES_DB: ode
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ode -d ode"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      ODE_TEST_DATABASE_URL: postgresql://ode:ode@localhost:5432/ode
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check ode tests
+      - run: pytest -q
+      - name: Docker image builds and CLI starts
+        run: docker build -t ode-app . && docker run --rm ode-app ode --help

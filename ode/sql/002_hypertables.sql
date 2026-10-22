@@ -1,3 +1,4 @@
+-- ode:optional  (needs the TimescaleDB extension; skipped with a warning if absent)
 -- ==================================================================
 -- TimescaleDB hypertable conversion for topic_metrics.
 -- Run AFTER 001_schema.sql. Safe to re-run (idempotent).

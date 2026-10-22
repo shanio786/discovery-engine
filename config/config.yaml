@@ -1,89 +1,220 @@
 # ==================================================================
 # Opportunity Discovery Engine — runtime config
-# Everything tunable lives here, not in code (spec requirement).
+# Everything tunable lives here, not in code. Validated on load.
 # ==================================================================
 
-# Markets to run every collector across.
-# Phase 1 starts lean (en + de). Add the rest when the pipeline is proven.
-# Full target set is listed under `all_markets` for easy promotion later.
+# Markets every collector runs across. Start lean, promote from all_markets.
+# Adding a market: add it here + (optionally) localized seed queries below +
+# a reddit scope. Wikipedia discovery works for any language automatically.
 markets:
   - en-US
   - de-DE
 
 all_markets: [en-US, en-GB, de-DE, ja-JP, pt-BR, es-ES, fr-FR, it-IT, nl-NL, pl-PL]
 
-# Wikipedia project overrides where it isn't simply "<lang>.wikipedia".
 wiki_project_overrides:
   en-US: en.wikipedia
   en-GB: en.wikipedia
-  de-DE: de.wikipedia
-  ja-JP: ja.wikipedia
   pt-BR: pt.wikipedia
-  es-ES: es.wikipedia
-  fr-FR: fr.wikipedia
-  it-IT: it.wikipedia
-  nl-NL: nl.wikipedia
-  pl-PL: pl.wikipedia
 
-# Seed topics bootstrap the harvest. Collectors expand from these.
-# Keep them intent-rich (how-to / build / automate) per the monetization rule.
-# `wiki` = exact Wikipedia article titles (per the English article; collectors
-# resolve per-language via langlinks is a Phase 5 nicety — for now we use the
-# same title and skip markets where the article 404s).
+# ------------------------------------------------------------------
+# Seeds = the operator's niches. Tutorial / build / automate intent
+# (PRODUCT + SPONSOR monetization). `wiki` is the ENGLISH article title;
+# its title in every other language is resolved automatically through
+# Wikidata. `queries` are per LANGUAGE — a seed with no query for a
+# language is not searched in that market (no English noise in de-DE).
+# `hn` is a short core term for Hacker News (long queries rarely match titles).
+# ------------------------------------------------------------------
 seeds:
-  queries:
-    - "n8n automation"
-    - "local llm setup"
-    - "home assistant automation"
-    - "obsidian plugin"
-    - "self hosting"
-    - "raspberry pi project"
-    - "notion template"
-    - "docker compose tutorial"
-  wiki_articles:
-    - "Home_Assistant_(software)"
-    - "Obsidian_(software)"
-    - "Self-hosting_(web_services)"
-    - "Raspberry_Pi"
-    - "Large_language_model"
+  - key: home_assistant
+    name: Home Assistant
+    wiki: Home Assistant
+    queries: {en: "home assistant automation", de: "home assistant automatisierung"}
+    hn: "Home Assistant"
+  - key: n8n
+    name: n8n workflow automation
+    wiki: N8n
+    queries: {en: "n8n automation tutorial", de: "n8n automatisierung"}
+    hn: "n8n"
+  - key: local_llm
+    name: Local LLMs
+    wiki: Large language model
+    queries: {en: "run local llm", de: "lokales llm installieren"}
+    hn: "local LLM"
+  - key: obsidian
+    name: Obsidian
+    wiki: Obsidian (software)
+    queries: {en: "obsidian plugin tutorial", de: "obsidian notizen tutorial"}
+    hn: "Obsidian"
+  - key: self_hosting
+    name: Self-hosting
+    wiki: Self-hosting (web services)
+    queries: {en: "self hosting server setup", de: "selbst hosten server"}
+    hn: "self-hosting"
+  - key: raspberry_pi
+    name: Raspberry Pi
+    wiki: Raspberry Pi
+    queries: {en: "raspberry pi project", de: "raspberry pi projekt"}
+    hn: "Raspberry Pi"
+  - key: docker
+    name: Docker
+    wiki: Docker (software)
+    queries: {en: "docker compose tutorial", de: "docker compose anleitung"}
+    hn: "Docker"
+  - key: notion
+    name: Notion
+    wiki: Notion (productivity software)
+    queries: {en: "notion template", de: "notion vorlage"}
+    hn: "Notion"
+  - key: excel_automation
+    name: Excel automation
+    wiki: Microsoft Excel
+    queries: {en: "excel automation tutorial", de: "excel automatisieren"}
+    hn: "Excel"
+  - key: power_bi
+    name: Power BI
+    wiki: Microsoft Power BI
+    queries: {en: "power bi dashboard tutorial", de: "power bi dashboard erstellen"}
+    hn: "Power BI"
+  - key: python_automation
+    name: Python automation
+    wiki: Python (programming language)
+    queries: {en: "python automation script", de: "python automatisierung"}
+    hn: "Python automation"
+  - key: stable_diffusion
+    name: Stable Diffusion / AI images
+    wiki: Stable Diffusion
+    queries: {en: "comfyui tutorial", de: "stable diffusion anleitung"}
+    hn: "Stable Diffusion"
+  - key: home_automation
+    name: Smart home
+    wiki: Home automation
+    queries: {en: "smart home setup", de: "smart home einrichten"}
+    hn: "smart home"
+  - key: arduino
+    name: Arduino
+    wiki: Arduino
+    queries: {en: "arduino project tutorial", de: "arduino projekt anleitung"}
+    hn: "Arduino"
+  - key: 3d_printing
+    name: 3D printing
+    wiki: 3D printing
+    queries: {en: "3d printing tutorial", de: "3d druck anleitung"}
+    hn: "3D printing"
 
-# How far back a fresh collect reaches (days). Daily cron uses a small window.
+# ------------------------------------------------------------------
+# Discovery: find topics nobody told us about.
+#   wiki_top  = each language's daily top-1000 articles (mainstream breakouts)
+#   morelike  = Wikipedia "similar articles" around every seed (niche
+#               neighbourhood — where tutorial topics actually live)
+#   langlink  = every discovered topic is also tracked in every other market
+#               (the cross-language arbitrage backbone)
+# ------------------------------------------------------------------
+discovery:
+  top_days_back: 3              # daily: scan the last 3 available days
+  bootstrap_days_back: 14       # first run: scan 2 weeks
+  morelike_per_seed: 25
+  max_tracked_per_market: 2500  # watchlist cap per market (seeds never evicted)
+  stale_after_days: 45          # wiki_top/morelike items not re-seen -> inactive
+  # Wikidata classes (direct P31) that are never content opportunities for this
+  # operator: people, media releases, sports, elections, wiki meta pages.
+  exclude_wikidata_classes:
+    Q5: human
+    Q4167410: disambiguation page
+    Q4167836: category
+    Q13406463: list article
+    Q11424: film
+    Q5398426: television series
+    Q21191270: television episode
+    Q3464665: television season
+    Q15416: television program
+    Q482994: album
+    Q134556: single
+    Q7366: song
+    Q215380: musical group
+    Q27020041: sports season
+    Q476028: football club
+    Q847017: sports club
+    Q40231: election
+    Q178561: battle
+    Q198: war
+    Q7725634: literary work
+  # Titles matching these regexes are skipped before any API call.
+  exclude_title_patterns:
+    - '^\d{4}([–-]\d{2,4})?[ _](?!\()'   # "2024 ...", "2023–24 ..." (events, seasons), not "1984 (novel)"
+    - '^(List[ _]of|Liste[ _]der|Liste[ _]von|Deaths[ _]in|Todesfälle)[ _]'
+  # Exact titles to skip (underscores and spaces are treated the same).
+  exclude_titles: ["-", "Main Page", "Hauptseite", "Undefined", "Wikipedia"]
+
+# ------------------------------------------------------------------
+# Reddit: one distinct signal per market. en-US = site-wide English search;
+# other markets = their own national/language subreddits. Markets without a
+# scope are skipped (recorded as `skipped`), never given duplicate data.
+# ------------------------------------------------------------------
+reddit:
+  max_pages: 5                  # x100 posts per query per run
+  unanswered_min_age_hours: 48  # brand-new posts aren't "unanswered" yet
+  scopes:
+    en-US: {mode: global}
+    en-GB: {subreddits: [unitedkingdom, CasualUK, AskUK, ukpersonalfinance]}
+    de-DE: {subreddits: [de, de_EDV, Finanzen, selbststaendig, homeassistant_de]}
+
+youtube:
+  max_results: 25
+
+# Hacker News is one global English audience: attribute it to ONE market so
+# en-US / en-GB never receive the same signal twice.
+hackernews:
+  market: en-US
+
+# How far back a topic's FIRST collect reaches. Later runs are incremental.
 lookback_days:
-  wikipedia: 400      # ~13 months — enough for 12-month saturation forecast
+  wikipedia: 400      # ~13 months — enough for the 12-month saturation forecast
   youtube: 180
   reddit: 90
   hackernews: 90
 
-# Per-source rate limits (requests/sec, burst). Throttle hard — pytrends/
-# autocomplete WILL get blocked; the safe sources still deserve politeness.
+# Re-fetched on every incremental run (upstream data arrives late / is revised).
+incremental_overlap_days:
+  wikipedia: 3
+  hackernews: 2
+  reddit: 2
+
+# Requests/sec + burst per upstream host family. Polite by design.
 rate_limits:
-  wikipedia:  {rate: 50.0, burst: 50}   # Wikimedia asks < 100 req/s; stay well under
+  wikipedia:  {rate: 25.0, burst: 25}
+  wikidata:   {rate: 4.0,  burst: 4}
   youtube:    {rate: 5.0,  burst: 5}
   reddit:     {rate: 1.5,  burst: 5}    # ~100/min OAuth limit
   hackernews: {rate: 5.0,  burst: 10}
 
-# Persisted daily quota caps. Collectors REFUSE calls that would exceed these
-# rather than failing mid-run. null = untracked/unlimited.
+# Parallel in-flight requests per source (the rate limit still applies).
+concurrency:
+  wikipedia: 8
+  wikidata: 2
+  hackernews: 4
+  reddit: 1
+  youtube: 1
+
+# Persisted daily quota caps. Calls that would exceed are refused, not failed.
 quotas:
-  youtube: 9000        # keep headroom under the 10k/day hard limit
+  youtube: 9000        # headroom under the 10k/day hard limit
   reddit: null
   wikipedia: null
   hackernews: null
 
-# YouTube unit costs (Data API v3 billing). Used for quota accounting.
 youtube_unit_cost:
   search: 100
   videos: 1
   channels: 1
 
-# HTTP behaviour
 http:
   timeout_seconds: 30
   max_retries: 4
-  backoff_base_seconds: 2.0   # 2, 4, 8, 16
+  backoff_base_seconds: 2.0       # 2, 4, 8, 16
+  circuit_breaker_failures: 10    # consecutive failures -> abort that run
 
-# Phase-2 scoring thresholds live here too (not used until Phase 2) so the
-# config shape is stable. momentum_* mirror the spec's phase gates.
+# Phase-2 scoring thresholds (unused until Phase 2; shape kept stable).
 scoring:
   min_series_points: 60
   spike_persist_days: 5

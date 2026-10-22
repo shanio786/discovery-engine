@@ -1,36 +1,45 @@
-# VPS stack for the Opportunity Discovery Engine (Phase 1).
-#   docker compose up -d db          # start TimescaleDB
-#   docker compose run --rm app ode initdb
-#   docker compose run --rm app ode collect
-# Daily scheduling is host cron calling the line above (see cron/crontab).
+# VPS stack for the Opportunity Discovery Engine.
+#   cp .env.example .env           # set POSTGRES_PASSWORD at minimum
+#   docker compose up -d db
+#   docker compose run --rm app ode doctor
+#   docker compose run --rm app ode daily
+# Scheduling: host cron calls scripts/run.sh (see cron/crontab).
 
 services:
   db:
     image: timescale/timescaledb:2.17.2-pg16
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ode
-      POSTGRES_PASSWORD: ode
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ode
+    # Bound to localhost ONLY. The database is never reachable from the internet;
+    # the Phase-3 API runs on this host and is the only public surface.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    shm_size: 256mb
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ode -d ode"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
+    logging:
+      driver: json-file
+      options: {max-size: "20m", max-file: "5"}
 
   app:
     build: .
-    env_file:
-      - .env
+    env_file: .env
     environment:
-      # Override .env's localhost DSN to reach the db service on the compose net
-      DATABASE_URL: postgresql://ode:ode@db:5432/ode
+      DATABASE_URL: postgresql://ode:${POSTGRES_PASSWORD}@db:5432/ode
     depends_on:
       db:
         condition: service_healthy
+    logging:
+      driver: json-file
+      options: {max-size: "20m", max-file: "5"}
 
 volumes:
   pgdata:
