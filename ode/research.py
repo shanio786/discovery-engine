@@ -12,6 +12,11 @@ from ode.db import Database
 
 async def attach_research(db: Database, plan: list[Any], *, questions: int = 12,
                           complaints: int = 5, formats: int = 3) -> None:
+    from ode.langpacks import load_packs
+
+    packs = await load_packs(db, [a.action_id for a in plan])
+    for a in plan:
+        a.languages = packs.get(a.action_id, [])
     keys = [(a.topic_id, a.market) for a in plan if a.topic_id is not None]
     if not keys:
         return

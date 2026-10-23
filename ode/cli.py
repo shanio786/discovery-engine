@@ -9,6 +9,7 @@
     ode briefs                     # Gemini titles/outline for today's top actions
     ode competitors [--refresh]    # big channels / upload surges / new Google leaders on your topics
     ode niches [--refresh]         # related topics grouped: one channel / site per niche
+    ode langpacks                  # Gemini pack per extra language (+ real Google searches)
     ode seo                        # DataForSEO: real Google volume / difficulty (top 20, budget)
     ode mine                       # long-tail questions, 1-star reviews, viral formats now
     ode backtest                   # did past top-20s really grow? learns composite weights
@@ -110,7 +111,7 @@ async def _daily() -> int:
     rc = max(rc, _print_results(out["collect"]))
     print("scoring:")
     rc = max(rc, _print_scoring(out["scoring"]))
-    for step in ("niches", "dataforseo"):
+    for step in ("niches", "dataforseo", "langpacks"):
         r = out.get(step) or {}
         print(f"{step}:\n  " + "  ".join(f"{k}={v}" for k, v in r.items()))
     print("miners:")
@@ -611,6 +612,7 @@ def main(argv: list[str] | None = None) -> int:
     ni = sub.add_parser("niches", help="related topics grouped into channel / site niches")
     ni.add_argument("--refresh", action="store_true", help="re-embed + re-cluster now")
     ni.add_argument("--limit", type=int, default=20)
+    sub.add_parser("langpacks", help="per-language keyword / titles / questions for top items")
     sub.add_parser("seo", help="DataForSEO: Google volume / difficulty / SERP for top items")
     sub.add_parser("mine", help="questions, 1-star reviews, viral formats for today's plan")
     sub.add_parser("backtest", help="precision@k of past rankings vs random; learn weights")
@@ -668,6 +670,7 @@ def main(argv: list[str] | None = None) -> int:
         "backtest": _backtest,
         "mine": _mine,
         "seo": lambda: _step("ode.dataforseo:run_verify"),
+        "langpacks": lambda: _step("ode.langpacks:langpacks_job"),
         "niches": lambda: _niches(args.refresh, args.limit),
         "competitors": lambda: _competitors(args.refresh),
         "scheduler": _scheduler,

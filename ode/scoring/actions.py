@@ -106,6 +106,7 @@ class Action:
     formats: list[dict[str, Any]] = field(default_factory=list)  # proven viral formats
     dollars: Any = None            # scoring.dollars.Dollars: $/month range + hours
     variant: str = ""              # e.g. "more:<content id>:<week>" for double-down items
+    languages: list[dict[str, Any]] = field(default_factory=list)  # per-language packs
 
     @property
     def action_id(self) -> str:

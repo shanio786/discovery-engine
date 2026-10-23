@@ -194,6 +194,13 @@ async def _clusters(db: Database, config: Config, secrets: Secrets) -> dict:
         return await cluster_job(db, config, secrets, client)
 
 
+async def _langpacks(db: Database, config: Config, secrets: Secrets) -> dict:
+    from ode.langpacks import langpacks_job
+
+    async with http_client(config) as client:
+        return await langpacks_job(db, config, secrets, client)
+
+
 async def _seo(db: Database, config: Config, secrets: Secrets) -> dict:
     from ode.dataforseo import run_verify
 
@@ -244,7 +251,8 @@ async def daily(config: Config, secrets: Secrets) -> dict:
             mined = await _miners(db, config, secrets)
             seo = await _guarded_step("dataforseo", _seo(db, config, secrets))
             briefs = await _briefs(db, config, secrets, today)
+            packs = await _guarded_step("langpacks", _langpacks(db, config, secrets))
         return {"discovery": disc, "collect": coll, "scoring": scored, "niches": niches,
-                "miners": mined, "dataforseo": seo, "briefs": briefs}
+                "miners": mined, "dataforseo": seo, "briefs": briefs, "langpacks": packs}
     finally:
         await db.close()

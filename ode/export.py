@@ -57,6 +57,7 @@ def pack_item(a: Action, brief: dict[str, Any] | None = None) -> dict[str, Any]:
         "complaints": a.complaints,
         "formats": a.formats,
         "brief": brief or None,
+        "languages": a.languages,
         "dollars_per_month": (None if a.dollars is None else
                               {"low": a.dollars.low, "high": a.dollars.high,
                                "hours": a.dollars.hours, "basis": a.dollars.basis}),

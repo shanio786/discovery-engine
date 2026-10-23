@@ -281,6 +281,16 @@ miners:
     within_days: 365
     max_formulas: 5            # Gemini one-line format formula per run (GEMINI_API_KEY)
 
+# Language packs (in `ode daily` after briefs; `ode langpacks`; needs GEMINI_API_KEY):
+# for the top items, keyword + 10 titles + 8 questions in every other open
+# language, checked against real Google Autocomplete there.
+langpacks:
+  enabled: true
+  max_items: 5                 # plan items per day
+  max_languages: 6
+  reuse_days: 30
+  verify: true                 # Google Autocomplete in that language + country
+
 # Social trends (scheduler job `social`, `ode realtime social`).
 social:
   tiktok:                      # TikTok Creative Center (public; best effort — use HTTPS_PROXY)

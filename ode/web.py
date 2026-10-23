@@ -278,6 +278,13 @@ async def item(request: Request) -> HTMLResponse:
                          + (f"<p>{e(f['formula'])}</p>" if f.get("formula") else "")
                          + "<ul>" + "".join(f"<li>{e(t)}</li>" for t in f["titles"][:5])
                          + "</ul>")
+        for lp in a.languages:
+            real = (f"<p class='mut'>Google par asli searches: {e(', '.join(lp['real_searches']))}"
+                    "</p>" if lp["real_searches"] else "")
+            parts.append(f"<h3>{e(lp['language_name'])} pack · keyword: {e(lp['keyword'] or '-')}"
+                         f"</h3>{real}<ul>" + "".join(f"<li>{e(t)}</li>" for t in lp["titles"])
+                         + "</ul><p class='mut'>Sawal: " + e(" · ".join(lp["questions"]))
+                         + "</p>")
         if b:
             parts.append("<h3>Title ideas (Gemini)</h3><ul>"
                          + "".join(f"<li>{e(t)}</li>" for t in b["titles"]) + "</ul>"

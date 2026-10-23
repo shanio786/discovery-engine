@@ -240,6 +240,10 @@ class Config:
         return dict(self._d.get("actions") or {})
 
     @property
+    def langpacks(self) -> dict[str, Any]:
+        return dict(self._d.get("langpacks") or {})
+
+    @property
     def social(self) -> dict[str, Any]:
         return dict(self._d.get("social") or {})
 

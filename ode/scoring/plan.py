@@ -203,6 +203,11 @@ def _research_md(a: Action) -> list[str]:
     if a.complaints:
         out += ["", "**Top apps ki 1-star shikayatein (yehi tumhari feature list hai):**"]
         out += [f"- “{c[:220]}”" for c in a.complaints]
+    for lp in a.languages:
+        real = f" · Google par asli: {', '.join(lp['real_searches'][:4])}" if lp[
+            "real_searches"] else ""
+        out += ["", f"**{lp['language_name']} pack** — keyword: `{lp['keyword'] or '-'}`{real}"]
+        out += [f"- {t}" for t in lp["titles"][:3]]
     if a.formats:
         out += ["", "**Saabit viral format (chhote channels jo baar baar chalte hain):**"]
         for f in a.formats:
