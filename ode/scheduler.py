@@ -8,6 +8,7 @@ job on its own schedule, one at a time, forever:
     reports        at scheduler.reports_at       reports/plan-latest.md, gems-latest.md/.csv
     plan_message   at scheduler.plan_message_at  Telegram: today's plan
     export         at scheduler.export_at        production pack -> n8n webhook
+    week           weekly (week_day, week_at)    Telegram: this week's plan for your hours
     midday_wiki    at scheduler.midday_wiki_at   cheap Wikipedia refresh
     hourly_wiki    every N minutes               hourly dumps -> same-day spikes
     trends         every N minutes               Google Trends per country
@@ -42,6 +43,7 @@ class Job:
     name: str
     every: timedelta | None = None    # interval job
     at: time | None = None            # daily job (UTC)
+    weekday: int | None = None        # with `at`: weekly on this day (0 = Monday)
 
 
 def parse_at(value: str) -> time:
@@ -58,6 +60,7 @@ def jobs_from_config(config: Config) -> list[Job]:
         Job("reports", at=parse_at(s.get("reports_at", "06:37"))),
         Job("plan_message", at=parse_at(s.get("plan_message_at", "06:47"))),
         Job("export", at=parse_at(s.get("export_at", "06:52"))),
+        Job("week", at=parse_at(s.get("week_at", "06:57")), weekday=int(s.get("week_day", 0))),
         Job("midday_wiki", at=parse_at(s.get("midday_wiki_at", "16:17"))),
         Job("hourly_wiki", every=timedelta(minutes=int(every.get("hourly_wiki_minutes", 60)))),
         Job("trends", every=timedelta(minutes=int(every.get("trends_minutes", 60)))),
@@ -72,7 +75,11 @@ def is_due(job: Job, last_run: datetime | None, now: datetime) -> bool:
         return last_run is None or now - last_run >= job.every
     assert job.at is not None
     slot = datetime.combine(now.date(), job.at)
-    if now < slot:
+    if job.weekday is not None:
+        slot -= timedelta(days=(now.weekday() - job.weekday) % 7)
+        if now < slot:
+            slot -= timedelta(days=7)   # this week's slot not reached: last week's counts
+    elif now < slot:
         slot -= timedelta(days=1)       # today's slot not reached: yesterday's counts
     # never run a daily job for a slot older than a day (no stampede after downtime)
     return (last_run is None or last_run < slot) and now - slot < timedelta(hours=20)
@@ -113,6 +120,7 @@ class Scheduler:
             "reports": lambda db: with_client(runner.reports_job, db),
             "export": lambda db: with_client(export.export_job, db),
             "content": lambda db: with_client(content.content_job, db),
+            "week": lambda db: with_client(runner.week_message_job, db),
             "backtest": lambda db: backtest.run_backtest(self.config, db),
             "hourly_wiki": lambda db: with_client(runner.hourly_job, db),
             "trends": lambda db: with_client(runner.trends_job, db),

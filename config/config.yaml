@@ -281,6 +281,18 @@ miners:
     within_days: 365
     max_formulas: 5            # Gemini one-line format formula per run (GEMINI_API_KEY)
 
+# Weekly plan (`ode week`, dashboard "Hafta", Monday Telegram). Hours can also be
+# set from the dashboard (stored in the DB, overrides this).
+portfolio:
+  hours_per_week: 20
+  days: 6                      # working days to spread the hours over
+  candidates: 60               # plan items considered
+  max_per_platform: 3
+  max_per_market: 3
+  upkeep_hours_per_week: {YOUTUBE: 3, SHORTS: 2, BLOG: 2, TOOLSITE: 1, APP: 1}
+  max_upkeep_share: 0.6        # running work never takes more than 60% of the week
+  mix_bonus: 1.25              # prefer adding a kind of work (fast / evergreen) not yet in
+
 # Your published content (`ode track <url>`): judged against YOUR normal at the
 # same age (median of your other items; these defaults until you have 3).
 content:
@@ -383,6 +395,8 @@ scheduler:
   content_at: "05:57"          # your published content: stats + WINNER / DROP verdicts
   reports_at: "06:37"          # reports/plan-latest.md + gems-latest.md/.csv
   plan_message_at: "06:47"     # Telegram: today's plan
+  week_day: 0                  # Monday: Telegram "is hafte ka plan" for your hours
+  week_at: "06:57"
   export_at: "06:52"           # production pack -> N8N_WEBHOOK_URL + reports/pack-latest.json
   midday_wiki_at: "16:17"      # cheap refresh for late-published days
   backup_note: "backups run from host cron (scripts/backup.sh)"

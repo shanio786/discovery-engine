@@ -207,6 +207,33 @@ async def plan_message_job(config: Config, secrets: Secrets, db: Database, clien
     return {"status": "ok" if ok else "skipped", "items": min(n, len(plan))}
 
 
+async def week_message_job(config: Config, secrets: Secrets, db: Database, client
+                           ) -> dict[str, Any]:
+    """Monday Telegram: the week's work for your hours (+ reports/week-latest.txt)."""
+    import os
+    from pathlib import Path
+
+    from ode.scoring.portfolio import build_week, render_week
+
+    today = datetime.now(UTC).date()
+    week = await build_week(db, config, today)
+    if not week.items:
+        return {"status": "skipped", "reason": "nothing to plan yet"}
+    days = int((config.portfolio or {}).get("days", 6))
+    text = render_week(week, days)
+    out_dir = Path(os.environ.get("ODE_REPORTS_DIR", "reports"))
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "week-latest.txt").write_text(text, encoding="utf-8")
+    except OSError as exc:
+        log.warning("week.write_failed", error=str(exc)[:200])
+    notifier = Notifier(config, secrets, client, db)
+    iso = today.isocalendar()
+    ok = await notifier.send_once(f"week:{iso.year}w{iso.week}", "week",
+                                  "🗓 " + html_escape(text), cooldown=timedelta(days=6))
+    return {"status": "ok" if ok else "skipped", "items": len(week.items), "hours": week.hours}
+
+
 async def reports_job(config: Config, secrets: Secrets, db: Database, client) -> dict[str, Any]:
     """Write today's plan + gems as Markdown/CSV into ODE_REPORTS_DIR (mounted
     from the host as ./reports), with *-latest copies for easy reading."""

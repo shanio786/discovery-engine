@@ -67,7 +67,7 @@ async def load_views(db: Database, config: Config, as_of: date) -> list[TopicVie
 
 
 async def build_plan(db: Database, config: Config, as_of: date, *,
-                     save: bool = True) -> list[Action]:
+                     save: bool = True, top_n: int | None = None) -> list[Action]:
     """Today's plan. Items you already started / published / dropped are left
     out; market values and platform weights are calibrated from your results;
     shown items are saved so their ids stay resolvable."""
@@ -105,7 +105,8 @@ async def build_plan(db: Database, config: Config, as_of: date, *,
 
     # your own winners first: making more of what already works is the surest money
     more = [a for a in await double_down_actions(db, config, as_of) if a.action_id not in done]
-    plan = more + select_plan(open_actions, top_n=max(1, int(cfg.get("top_n", 25)) - len(more)),
+    n = top_n or int(cfg.get("top_n", 25))
+    plan = more + select_plan(open_actions, top_n=max(1, n - len(more)),
                        per_market_max=int(cfg.get("per_market_max", 4)),
                        per_topic_max=int(cfg.get("per_topic_max", 3)),
                        rank_by=str(cfg.get("rank_by", "dollars")))

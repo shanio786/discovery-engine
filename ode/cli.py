@@ -19,6 +19,7 @@
     ode track <url> [--id <plan id>] [--platform BLOG] [--keyword "..."]   # your published item
     ode content [--refresh]        # your items: views, verdict (WINNER / DROP ...), next 5 ideas
     ode untrack <content id>
+    ode week [--hours 25] [--save] # this week's best mix of work for your hours
     ode worklog                    # what you did, what it earned, what was learned
     ode alerts [--limit 20]        # what the engine alerted (or would have)
     ode notify-test                # send a Telegram test message
@@ -394,6 +395,23 @@ async def _untrack(cid: int) -> int:
     return await _with_db(run)
 
 
+async def _week(hours: float | None, save: bool) -> int:
+    from ode.scoring import portfolio
+
+    config = load_config()
+
+    async def run(db: Database) -> int:
+        if hours is not None and save:
+            await portfolio.save_hours(db, hours)
+        week = await portfolio.build_week(db, config, datetime.now(UTC).date(), hours)
+        if not week.items:
+            print("nothing to plan yet — run `ode daily` first", file=sys.stderr)
+            return 1
+        print(portfolio.render_week(week, int(config.portfolio.get("days", 6))))
+        return 0
+    return await _with_db(run)
+
+
 async def _notify_test() -> int:
     from ode.notify import Notifier
     from ode.pipeline import http_client
@@ -563,6 +581,9 @@ def main(argv: list[str] | None = None) -> int:
     rs.add_argument("--views", type=int)
     rs.add_argument("--revenue", type=float, help="USD earned so far")
     rs.add_argument("--hours", type=float, help="hours you spent in total")
+    wk = sub.add_parser("week", help="this week's best mix of work for your hours")
+    wk.add_argument("--hours", type=float)
+    wk.add_argument("--save", action="store_true", help="remember --hours")
     tr = sub.add_parser("track", help="track your published video / page / app")
     tr.add_argument("url")
     tr.add_argument("--id", dest="action", help="the plan item id it came from")
@@ -601,6 +622,7 @@ def main(argv: list[str] | None = None) -> int:
         "done": lambda: _done(args.id, args.status, args.hours, args.note),
         "result": lambda: _result(args.id, args.views, args.revenue, args.hours),
         "worklog": lambda: _worklog(args.limit),
+        "week": lambda: _week(args.hours, args.save),
         "track": lambda: _track(args.url, args.action, args.platform, args.keyword, args.market),
         "content": lambda: _content(args.refresh),
         "untrack": lambda: _untrack(args.cid),

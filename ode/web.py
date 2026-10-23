@@ -174,7 +174,7 @@ def client_ip(request: Request, trust_proxy: bool) -> str:
 
 
 # ---------------------------------------------------------------- rendering
-NAV = [("/", "Aaj ka plan"), ("/content", "Mera content"), ("/worklog", "Mera kaam"),
+NAV = [("/", "Aaj ka plan"), ("/week", "Hafta"), ("/content", "Mera content"), ("/worklog", "Mera kaam"),
        ("/gems", "Gems"), ("/alerts", "Alerts")]
 
 
@@ -436,6 +436,51 @@ async def untrack_view(request: Request) -> Response:
     return RedirectResponse("/content", status_code=303)
 
 
+async def week_page(request: Request) -> HTMLResponse:
+    from ode.scoring.portfolio import build_week, hours_setting, schedule
+
+    st = request.app.state
+    hours = await hours_setting(st.db, st.config)
+    week = await build_week(st.db, st.config, datetime.now(UTC).date(), hours)
+    days = int(st.config.portfolio.get("days", 6))
+    lo, hi = week.dollars
+    icon = {"more": "🔥", "new": "🆕", "upkeep": "🔁"}
+    cards = []
+    for it in week.items:
+        money = (f" · ${it.dollars[0]:,.0f}–${it.dollars[1]:,.0f}/mahina" if it.dollars else "")
+        link = (f' · <a href="/item/{e(it.action.action_id)}">detail →</a>' if it.action else "")
+        cards.append(f'<div class="card"><h2>{icon[it.kind]} {e(PLATFORM_LABEL.get(it.platform, it.platform))}'
+                     f' · {e(LANGUAGE_NAME.get(it.market.split("-")[0], it.market))}</h2>'
+                     f"<div><b>{e(it.title)}</b></div><div class='mut'>{it.hours:g} ghante{money}"
+                     f" · {e(', '.join(it.days))}{link}</div>"
+                     f"<div class='mut'>{e(it.reason)}</div></div>")
+    sched = "".join(f"<tr><td>{d}</td><td>{e(' · '.join(f'{p.title[:30]} {h:g}h' for p, h in parts))}"
+                    "</td></tr>" for d, parts in schedule(week, days).items() if parts)
+    body = (f"<h1>Is hafte ka plan</h1><div class='card'><b>{week.hours:g} / {hours:g} ghante</b>"
+            f" · nayi kamai ka andaza <b>${lo:,.0f}–${hi:,.0f}/mahina</b> (3–6 mahine baad)"
+            f'<form method="post" action="/hours">{_csrf(request)}'
+            f'<label>Hafte mein kitne ghante?</label><input name="hours" inputmode="decimal" '
+            f'value="{hours:g}"><button>Plan banao</button></form></div>'
+            + "".join(cards)
+            + (f'<div class="card"><h3>Roz ka schedule</h3><table>{sched}</table></div>'
+               if sched else ""))
+    return page("Hafta", body, "/week")
+
+
+async def set_hours(request: Request) -> Response:
+    from ode.scoring.portfolio import save_hours
+
+    try:
+        form = await _form(request)
+    except Forbidden:
+        return PlainTextResponse("Bad request (CSRF)", status_code=403)
+    hours = _num(form.get("hours"), float)
+    if hours is None or not 1 <= hours <= 100:
+        return PlainTextResponse("hours: 1-100", status_code=400)
+    await save_hours(request.app.state.db, hours)
+    return RedirectResponse("/week", status_code=303)
+
+
 async def worklog_page(request: Request) -> HTMLResponse:
     st = request.app.state
     rows = await worklog.entries(st.db, 200)
@@ -514,7 +559,8 @@ def create_app(config: Config, secrets: Secrets, db: Database | None = None) -> 
     app = Starlette(
         routes=[Route("/", home), Route("/item/{aid}", item), Route("/done", done, methods=["POST"]),
                 Route("/result", result, methods=["POST"]), Route("/worklog", worklog_page),
-                Route("/content", content_page), Route("/track", track, methods=["POST"]),
+                Route("/content", content_page), Route("/week", week_page),
+                Route("/hours", set_hours, methods=["POST"]), Route("/track", track, methods=["POST"]),
                 Route("/untrack", untrack_view, methods=["POST"]),
                 Route("/gems", gems_page), Route("/alerts", alerts_page), Route("/health", health)],
         middleware=[Middleware(Guard)], lifespan=lifespan)
