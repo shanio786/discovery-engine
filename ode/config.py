@@ -48,6 +48,8 @@ class Secrets(BaseSettings):
     dataforseo_login: str | None = None
     dataforseo_password: str | None = None
     gemini_api_key: str | None = None
+    telegram_bot_token: str | None = None
+    telegram_chat_id: str | None = None
 
 
 class Config:
@@ -211,6 +213,22 @@ class Config:
     @property
     def gemini(self) -> dict[str, Any]:
         return dict(self._d.get("gemini") or {})
+
+    @property
+    def realtime(self) -> dict[str, Any]:
+        return dict(self._d.get("realtime") or {})
+
+    @property
+    def alerts(self) -> dict[str, Any]:
+        return dict(self._d.get("alerts") or {})
+
+    @property
+    def seasonal(self) -> dict[str, Any]:
+        return dict(self._d.get("seasonal") or {})
+
+    @property
+    def scheduler(self) -> dict[str, Any]:
+        return dict(self._d.get("scheduler") or {})
 
     @property
     def actions(self) -> dict[str, Any]:

@@ -35,7 +35,30 @@ rank / go viral there, comparable across languages: competing videos per daily
 searcher), **value** (money path × what a visitor is worth in that market),
 what is still unverified, and optional Gemini title ideas + outline.
 
-## Status: Phases 1–2 (harvest, discovery, scoring) + action plan ✅
+## Always on
+
+`docker compose up -d` starts a **scheduler** service that never stops
+(restarts itself after crashes and reboots) and runs, in UTC:
+
+| When | Job |
+|---|---|
+| 04:17 daily | full cycle: discover → collect → score → Gemini briefs |
+| 06:37 daily | `reports/plan-latest.md`, `gems-latest.md`, `gems-latest.csv` on the host |
+| 06:47 daily | Telegram: **today's plan** (top actions, one line each) |
+| every hour | Wikipedia **hourly** dumps → same-day spikes → alert |
+| every hour | Google Trends "trending now" in every market's country → alert |
+| every 6 h | breakout alert (7 days vs prior 7 > 3x, little competition) |
+| 16:17 daily | cheap Wikipedia refresh |
+
+Alerts go to Telegram (set `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID`) and are
+always logged (`ode alerts`); the same alert never repeats within its
+cooldown. **Seasonal** topics (a yearly peak month, e.g. exams, tax, Ramadan,
+holidays) are put on the plan 2–8 weeks *before* the peak so AI content has
+time to rank. 16 markets by default incl. **Urdu (Pakistan)**, Arabic,
+Korean and Vietnamese; any `<lang>-<REGION>` can be added. Set
+`HTTPS_PROXY` in `.env` to route all traffic through a proxy / VPN gateway.
+
+## Status: Phases 1–2 (harvest, discovery, scoring) + action plan + realtime ✅
 
 | Area | What exists |
 |---|---|
@@ -79,9 +102,23 @@ docker compose run --rm app ode daily
 docker compose run --rm app ode status
 docker compose run --rm app ode watchlist
 
-# 6. Roz ka automatic schedule + backups
-crontab cron/crontab
+# 6. Hamesha chalne wala engine (scheduler) — cron ki zaroorat nahi
+docker compose up -d scheduler
+docker compose logs -f scheduler          # dekho kya kar raha hai
+# backups ke liye sirf ye ek cron line:
+(crontab -l 2>/dev/null; echo "7 3 * * * /opt/discovery-engine/scripts/backup.sh >> /opt/discovery-engine/logs/backup.log 2>&1") | crontab -
 ```
+
+### Telegram alerts (phone par)
+
+1. Telegram mein **@BotFather** → `/newbot` → token milega.
+2. Apne bot ko koi bhi message bhejo.
+3. `https://api.telegram.org/bot<TOKEN>/getUpdates` kholo → `"chat":{"id": ...}` = chat id.
+4. `.env` mein `TELEGRAM_BOT_TOKEN=...` aur `TELEGRAM_CHAT_ID=...`, phir
+   `docker compose up -d scheduler` aur `docker compose run --rm app ode notify-test`.
+
+Subah ka plan, BREAKOUT, "abhi uchal raha hai" (hourly spikes) aur Google
+Trends — sab phone par aayenge.
 
 `ode doctor` mein sab `[OK]` aaye to system sahi chal raha hai.
 
@@ -125,6 +162,10 @@ Naya code aaye to bas `./scripts/deploy.sh` chalao.
 | `ode daily` | Schema → discover → collect → score, under a lock. What cron runs. |
 | `ode gems [--market de-DE] [--format table\|md\|csv] [--limit 30] [--min-confidence 0.5]` | The ranked shortlist with a *why* per row. `--include-unknown` also lists topics too new for a momentum phase. |
 | `ode plan [--format table\|md\|json]` | **What to do now**: platform + language + topic + why + first steps. |
+| `ode scheduler` | Always-on engine (what the `scheduler` compose service runs). |
+| `ode realtime hourly\|trends\|breakout\|plan` | Run one realtime job now. |
+| `ode alerts` | What was alerted (or would have been, without Telegram). |
+| `ode notify-test` | Send a Telegram test message. |
 | `ode briefs` | Gemini titles / outline / hours for today's top actions (max 5/day, needs `GEMINI_API_KEY`). |
 | `ode score [--as-of YYYY-MM-DD]` | Re-score from stored data (only rows dated ≤ as-of are read). |
 | `ode discover [--market de-DE]` | Refresh watchlists only. |

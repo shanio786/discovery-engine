@@ -12,6 +12,7 @@ One `HttpFetcher` per upstream host family. It owns:
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -33,8 +34,13 @@ class CircuitOpenError(Exception):
     """Too many consecutive failures: the host is down or blocked. Stop the run."""
 
 
+_BOT_TOKEN = re.compile(r"/bot[^/]+/")
+
+
 def redact_url(url: str, params: dict[str, Any] | None = None) -> str:
-    """Return `url` (+ params) with secret query values replaced by '***'."""
+    """Return `url` (+ params) with secret query values and Telegram-style
+    path tokens (`/bot<token>/`) replaced by '***'."""
+    url = _BOT_TOKEN.sub("/bot***/", url)
     parts = urlsplit(url)
     query = parse_qsl(parts.query, keep_blank_values=True)
     if params:

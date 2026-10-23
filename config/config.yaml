@@ -21,9 +21,14 @@ markets:
   - tr-TR
   - id-ID
   - hi-IN
+  - ur-PK
+  - ar-SA
+  - ko-KR
+  - vi-VN
 
 all_markets: [en-US, en-GB, de-DE, ja-JP, fr-FR, es-ES, it-IT, pt-BR, nl-NL, pl-PL,
-              tr-TR, id-ID, hi-IN, ko-KR, ar-SA, vi-VN, sv-SE]
+              tr-TR, id-ID, hi-IN, ur-PK, ar-SA, ko-KR, vi-VN, sv-SE, bn-BD, th-TH,
+              ru-RU, uk-UA, fa-IR, ms-MY, ro-RO, cs-CZ, el-GR, hu-HU, fi-FI, da-DK, no-NO]
 
 # Relative value of one visitor per market (ads CPM / sponsor budgets), US = 1.0.
 # ROUGH public estimates — replace with your own RPM once you have revenue.
@@ -46,6 +51,10 @@ market_value:
   vi-VN: 0.12
   id-ID: 0.12
   hi-IN: 0.10
+  ur-PK: 0.08
+  bn-BD: 0.06
+  th-TH: 0.15
+  ru-RU: 0.20
 
 wiki_project_overrides:
   en-US: en.wikipedia
@@ -235,6 +244,56 @@ actions:
   # at this ratio YouTube ease bottoms out
   saturated_ratio: 100
 
+# ------------------------------------------------------------------
+# Realtime layer (run by `ode scheduler`, also callable one-off).
+# ------------------------------------------------------------------
+realtime:
+  # Wikipedia hourly pageview dumps (public, ~50 MB/hour). Same-day spikes.
+  hourly:
+    enabled: true
+    min_views_per_hour: 80     # rows below this are not stored (keeps the DB small)
+    window_hours: 3            # compare the last 3 hours ...
+    baseline_hours: 48         # ... with the same-length windows of the last 2 days
+    spike_ratio: 5.0           # >= 5x its own normal = spike
+    min_window_views: 600      # and at least this many views in the window
+    new_article_views: 3000    # unseen in the baseline but this big = spike too
+    max_alerts_per_run: 10
+    include_people: false      # people/events are viral but risky; off by default
+  # Google Trends "trending now" RSS per country (free, no key).
+  trends:
+    enabled: true
+    min_traffic: 2000          # approx searches before we care
+    add_to_watchlist: true     # matched Wikipedia articles start being tracked
+    max_alerts_per_run: 5
+
+# Alerts (Telegram). Same alert never repeats within its cooldown.
+alerts:
+  breakout:
+    spike_ratio: 3.0           # spec: 7d vs prior 7d > 3x ...
+    max_competing_videos: 20   # ... where competing content < 20 (or not measured yet)
+    cooldown_days: 7
+  realtime_cooldown_hours: 24
+  trends_cooldown_hours: 24
+  plan_top_n: 5                # morning message: today's top actions
+
+# Seasonal peaks (from >= 13 months of daily history).
+seasonal:
+  min_history_days: 365
+  peak_ratio: 2.0              # a month >= 2x the year's median month = a season
+  lead_weeks: [2, 8]           # suggest starting 2-8 weeks before the peak month
+
+# Always-on scheduler (`ode scheduler`): what runs when (UTC).
+scheduler:
+  daily_at: "04:17"            # full cycle: schema -> discover -> collect -> score -> briefs
+  reports_at: "06:37"          # reports/plan-latest.md + gems-latest.md/.csv
+  plan_message_at: "06:47"     # Telegram: today's plan
+  midday_wiki_at: "16:17"      # cheap refresh for late-published days
+  backup_note: "backups run from host cron (scripts/backup.sh)"
+  every:
+    hourly_wiki_minutes: 60    # ingest the newest hourly dump + spike check
+    trends_minutes: 60         # Google Trends per market
+    breakout_minutes: 360      # spec: breakout alert check every 6h
+
 # Hacker News is one global English audience: attribute it to ONE market so
 # en-US / en-GB never receive the same signal twice.
 hackernews:
@@ -261,6 +320,9 @@ rate_limits:
   reddit:     {rate: 1.5,  burst: 5}    # ~100/min OAuth limit
   playstore:  {rate: 1.0,  burst: 2}    # unofficial scraping: stay polite
   gemini:     {rate: 0.5,  burst: 1}
+  telegram:   {rate: 1.0,  burst: 3}
+  trends:     {rate: 0.5,  burst: 1}
+  dumps:      {rate: 1.0,  burst: 1}
   hackernews: {rate: 5.0,  burst: 10}
 
 # Parallel in-flight requests per source (the rate limit still applies).

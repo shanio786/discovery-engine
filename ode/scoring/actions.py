@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 PLATFORMS = ("BLOG", "YOUTUBE", "SHORTS", "TOOLSITE", "APP")
@@ -75,6 +75,7 @@ class TopicView:
     topic_id: int | None = None
     tutorial: bool = False
     tool_keyword: str | None = None
+    seasonal: Mapping[str, Any] | None = None   # {"month_name", "ratio", "weeks"}
 
 
 @dataclass
@@ -197,12 +198,18 @@ def plan_topic(t: TopicView, *, config: Mapping[str, Any] | None = None,
     """All candidate actions for one topic (including cross-language ones)."""
     cfg = config or {}
     sat_ratio = float(cfg.get("saturated_ratio", 100))
-    if t.phase in ("UNKNOWN", "DECLINING"):
-        return []  # never tell someone to start on a dying or unmeasured topic
+    if t.phase == "UNKNOWN" or (t.phase == "DECLINING" and not t.seasonal):
+        return []  # never a dying or unmeasured topic — unless its yearly peak is coming
+    if t.seasonal:  # a coming peak beats today's phase: prepare content in time
+        t = replace(t, momentum=max(t.momentum, 2.0))
     paths = set(t.money_paths)
     value = _clip(t.money * t.market_value)
     sd = supply_demand_ease(t.competing_videos, t.mean30, sat_ratio)
-    base_why = [x for x in (_phase_line(t), _views(t)) if x]
+    season_line = (f"📅 SEASONAL — har saal {t.seasonal['month_name']} mein "
+                   f"~{t.seasonal['ratio']:.1f}x demand; peak {t.seasonal['weeks']} hafte mein. "
+                   "AI content ABHI banao taake peak tak rank ho jaye") if t.seasonal else ""
+    base_why = [x for x in (season_line, _phase_line(t) if not t.seasonal else "", _views(t))
+                if x]
     no_yt = [] if sd is not None or t.outlier is not None else [
         "YouTube competition abhi naapi nahi gayi (kal ka probe batayega)"]
     ps = t.playstore or {}

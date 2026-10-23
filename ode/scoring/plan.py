@@ -58,6 +58,7 @@ async def load_views(db: Database, config: Config, as_of: date) -> list[TopicVie
             wiki_langs=d.get("wiki_langs"), market_value=config.market_value(r["market"]),
             playstore=ps.get((r["topic_id"], r["market"]), {}), topic_id=r["topic_id"],
             tutorial=bool(d.get("tutorial")), tool_keyword=d.get("tool_keyword"),
+            seasonal=d.get("seasonal"),
         ))
     return views
 

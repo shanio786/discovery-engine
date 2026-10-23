@@ -22,7 +22,8 @@ async def test_schema_is_idempotent_and_timescale_features_applied(db):
     again = await db.init_schema()
     assert again == {"001_schema.sql": "ok", "002_hypertables.sql": "ok",
                      "003_discovery.sql": "ok", "004_compression.sql": "ok",
-                     "005_scoring.sql": "ok"}
+                     "005_scoring.sql": "ok", "006_realtime.sql": "ok",
+                     "007_realtime_timescale.sql": "ok"}
     assert await count(db, "SELECT count(*) FROM timescaledb_information.hypertables "
                            "WHERE hypertable_name='topic_metrics'") == 1
     assert await count(db, "SELECT count(*) FROM timescaledb_information.jobs "

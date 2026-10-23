@@ -238,6 +238,39 @@ class Discoverer:
                                                   today=self.today):
                     report.langlinks += 1
 
+    async def admit_titles(self, market: Market, titles: list[str], origin: str, *,
+                           include_people: bool = False) -> list[dict]:
+        """Resolve + filter + admit titles found by realtime sources (hourly
+        spikes, Google Trends). Same rules as discovery. Returns one dict per
+        input: {title, canonical, topic_key, active, reason}."""
+        report = MarketReport(market.code)
+        wanted = [t for t in dict.fromkeys(norm_title(t) for t in titles if t)
+                  if not self.filter.reason(t)]
+        if not wanted:
+            return []
+        pages = await self.meta.resolve_titles(market.wiki_host, wanted)
+        qids = sorted({p.qid for p in pages.values() if p.qid})
+        entities = await self.meta.entities(qids) if qids else {}
+        saved = self.excluded_classes
+        if include_people:
+            self.excluded_classes = {k: v for k, v in saved.items() if k != "Q5"}
+        try:
+            for title in wanted:
+                await self._admit(market, self.config.markets(), title, origin,
+                                  pages.get(title), entities, report)
+        finally:
+            self.excluded_classes = saved
+        rows = await self.db.watchlist_rows(market.code, KIND)
+        out = []
+        for title in wanted:
+            page = pages.get(title)
+            canonical = norm_title(page.title) if page else title
+            row = rows.get(canonical) or {}
+            out.append({"title": title, "canonical": canonical,
+                        "topic_key": row.get("topic_key"), "active": bool(row.get("active")),
+                        "reason": row.get("excluded_reason")})
+        return out
+
     async def run(self, market_codes: list[str] | None = None) -> list[dict]:
         markets = self.config.markets()
         targets = [m for m in markets if not market_codes or m.code in market_codes]

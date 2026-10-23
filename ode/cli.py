@@ -7,6 +7,10 @@
     ode gems [--market de-DE] [--format md|csv|table] [--limit 30]
     ode plan [--format md|table|json]   # what to do NOW: platform + language + steps
     ode briefs                     # Gemini titles/outline for today's top actions
+    ode scheduler                  # ALWAYS-ON: runs every job on its schedule, forever
+    ode realtime hourly|trends|breakout|plan   # run one realtime job now
+    ode alerts [--limit 20]        # what the engine alerted (or would have)
+    ode notify-test                # send a Telegram test message
     ode discover [--market de-DE]  # refresh watchlists only
     ode collect [--source wikipedia] [--market en-US]
     ode status [--limit 30]        # recent runs
@@ -133,6 +137,69 @@ async def _briefs() -> int:
     return 1 if r["status"] == "error" else 0
 
 
+async def _realtime(job: str) -> int:
+    from ode.pipeline import http_client
+    from ode.realtime import runner
+
+    fn = {"hourly": runner.hourly_job, "trends": runner.trends_job,
+          "breakout": runner.breakout_job, "plan": runner.plan_message_job}[job]
+    config, secrets = load_config(), get_secrets()
+    db = await Database.connect(secrets.database_url)
+    try:
+        await db.init_schema()
+        async with http_client(config) as client:
+            result = await fn(config, secrets, db, client)
+        print("  " + "  ".join(f"{k}={v}" for k, v in result.items()))
+        return 1 if result.get("status") == "error" else 0
+    finally:
+        await db.close()
+
+
+async def _alerts(limit: int) -> int:
+    import json
+
+    db = await Database.connect(get_secrets().database_url)
+    try:
+        rows = await db.pool.fetch(
+            "SELECT kind, key, sent_at, payload FROM alerts_sent ORDER BY sent_at DESC LIMIT $1",
+            limit)
+        if not rows:
+            print("no alerts yet")
+        for r in rows:
+            p = r["payload"] if isinstance(r["payload"], dict) else json.loads(r["payload"] or "{}")
+            first = (p.get("text") or "").splitlines()
+            print(f"  {r['sent_at']:%Y-%m-%d %H:%M} {r['kind']:9} {first[0] if first else r['key']}")
+        return 0
+    finally:
+        await db.close()
+
+
+async def _notify_test() -> int:
+    from ode.notify import Notifier
+    from ode.pipeline import http_client
+
+    config, secrets = load_config(), get_secrets()
+    db = await Database.connect(secrets.database_url)
+    try:
+        await db.init_schema()
+        async with http_client(config) as client:
+            n = Notifier(config, secrets, client, db)
+            if not n.enabled:
+                print("TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set", file=sys.stderr)
+                return 1
+            await n._send("✅ ODE connected. Alerts will arrive here.")
+        print("  sent")
+        return 0
+    finally:
+        await db.close()
+
+
+async def _scheduler() -> int:
+    from ode.scheduler import main as sched_main
+
+    return await sched_main(load_config(), get_secrets())
+
+
 async def _score(as_of: date | None, markets: list[str] | None) -> int:
     from ode.pipeline import score
 
@@ -253,6 +320,12 @@ def main(argv: list[str] | None = None) -> int:
     pl.add_argument("--format", choices=["table", "md", "json"], default="table")
     pl.add_argument("--as-of", type=date.fromisoformat)
     sub.add_parser("briefs", help="Gemini briefs for today's top actions (GEMINI_API_KEY)")
+    sub.add_parser("scheduler", help="always-on: run every job on its schedule, forever")
+    rt = sub.add_parser("realtime", help="run one realtime job now")
+    rt.add_argument("job", choices=["hourly", "trends", "breakout", "plan"])
+    al = sub.add_parser("alerts", help="recent alerts")
+    al.add_argument("--limit", type=int, default=20)
+    sub.add_parser("notify-test", help="send a Telegram test message")
     args = parser.parse_args(argv)
 
     commands = {
@@ -266,6 +339,10 @@ def main(argv: list[str] | None = None) -> int:
         "score": lambda: _score(args.as_of, args.market),
         "plan": lambda: _plan(args.format, args.as_of),
         "briefs": _briefs,
+        "scheduler": _scheduler,
+        "realtime": lambda: _realtime(args.job),
+        "alerts": lambda: _alerts(args.limit),
+        "notify-test": _notify_test,
         "gems": lambda: _gems(args.market, args.limit, args.format, args.min_confidence,
                               args.include_unknown, args.as_of),
     }

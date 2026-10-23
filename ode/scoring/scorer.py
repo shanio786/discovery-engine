@@ -29,6 +29,7 @@ from ode.scoring.components import (
     weighted_mean,
 )
 from ode.scoring.momentum import Momentum, MomentumParams, momentum_profile
+from ode.scoring.seasonal import seasonal_peak
 from ode.scoring.text import clean_query
 
 log = get_logger(__name__)
@@ -128,7 +129,7 @@ class Scorer:
         if not ids:
             return []
         window = self.params.window_days
-        wiki = await rd.series(market.code, "wikipedia", "pageviews", window)
+        wiki = await rd.series(market.code, "wikipedia", "pageviews", max(window, 400))
         reddit = await rd.series(market.code, "reddit", "reddit_mentions", 90)
         unanswered = await rd.series(market.code, "reddit", "reddit_unanswered", 90)
         hn = await rd.series(market.code, "hackernews", "hn_mentions", 90)
@@ -194,6 +195,12 @@ class Scorer:
                 money_specific=len(money.paths) > 1,
             )
             sat, months_left = saturation_forecast(monthly.get(tid, {}), as_of)
+            sea_cfg = self.config.seasonal
+            season = seasonal_peak(
+                wiki.get(tid, {}), as_of,
+                min_history_days=int(sea_cfg.get("min_history_days", 365)),
+                peak_ratio=float(sea_cfg.get("peak_ratio", 2.0)),
+                lead_weeks=tuple(sea_cfg.get("lead_weeks", (2, 8))))
             langs = set(info["wiki_langs"] or [])
             details = {
                 "name": name,
@@ -215,6 +222,7 @@ class Scorer:
                 "missing_in": (sorted(configured_langs - langs - {market.language})
                                if langs else []),
                 "months_left": months_left,
+                "seasonal": season.as_dict() if season else None,
             }
             out.append(TopicScore(tid, info["topic_key"], name, market.code, round(demand, 2),
                                   mom, money, None if gap is None else round(gap, 2),

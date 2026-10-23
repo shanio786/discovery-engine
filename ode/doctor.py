@@ -185,6 +185,44 @@ async def run_doctor(config: Config, secrets: Secrets) -> list[Check]:
 
         checks.append(await _guard("play store", playstore, required=False))
 
+        async def hourly_dump() -> str:
+            from ode.realtime.hourly import dump_url
+            hour = (datetime.now(UTC) - timedelta(hours=3)).replace(minute=0, second=0,
+                                                                     microsecond=0)
+            r = await client.head(dump_url(hour), timeout=20.0)
+            if r.status_code >= 400:
+                raise RuntimeError(f"HTTP {r.status_code} for the {hour:%H}:00 dump")
+            size = int(r.headers.get("content-length", 0)) // 1_000_000
+            return f"hourly dump {hour:%Y-%m-%d %H}:00 available ({size} MB)"
+
+        checks.append(await _guard("wikipedia hourly", hourly_dump, required=False))
+
+        async def trends() -> str:
+            from ode.realtime.trends import DEFAULT_URL, fetch_trends
+            items = await fetch_trends(make_fetcher(config, client, "trends"),
+                                       config.market("en-US"),
+                                       (config.realtime.get("trends") or {}).get("url",
+                                                                                DEFAULT_URL))
+            if not items:
+                raise RuntimeError("no trend items parsed (feed URL/format changed?)")
+            return f"{len(items)} US trends; top: {items[0].title!r}"
+
+        checks.append(await _guard("google trends", trends, required=False))
+
+        if secrets.telegram_bot_token:
+            async def telegram() -> str:
+                from ode.notify import TG_API
+                me = await make_fetcher(config, client, "telegram").get_json(
+                    TG_API.format(token=secrets.telegram_bot_token, method="getMe"))
+                if not (me or {}).get("ok"):
+                    raise RuntimeError("getMe failed — token wrong?")
+                chat = "chat id set" if secrets.telegram_chat_id else "TELEGRAM_CHAT_ID missing"
+                return f"bot @{me['result'].get('username')} ({chat})"
+            checks.append(await _guard("telegram", telegram, required=False))
+        else:
+            checks.append(Check("telegram", False, "TELEGRAM_BOT_TOKEN not set (alerts only "
+                                "logged, see `ode alerts`)", required=False))
+
         if secrets.gemini_api_key:
             async def gemini() -> str:
                 from ode.briefs import API

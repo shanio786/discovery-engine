@@ -28,7 +28,7 @@ HARVEST_LOCK_ID = 7_301_995_001  # arbitrary, stable advisory-lock key
 
 _METRIC_COLS = ["topic_id", "market", "date", "source", "metric_name", "value"]
 # When one title is reached several ways, the most specific origin label wins.
-ORIGIN_PRIORITY = ["langlink", "wiki_top", "morelike", "seed"]
+ORIGIN_PRIORITY = ["langlink", "wiki_top", "trend", "realtime", "morelike", "seed"]
 
 
 class AlreadyRunning(RuntimeError):
