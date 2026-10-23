@@ -3,11 +3,17 @@
 # Every job is idempotent and protected by a database lock, so a slow run
 # and the next scheduled one can never corrupt or duplicate data.
 
-# Full cycle daily at 04:17 UTC: schema -> discover -> collect -> score.
+# Full cycle daily at 04:17 UTC: schema -> discover -> collect -> score -> miners -> briefs.
 17 4 * * *  /opt/discovery-engine/scripts/run.sh daily
 
 # Today's shortlist -> reports/gems-YYYY-MM-DD.md + .csv (reports/latest.md).
 47 6 * * *  /opt/discovery-engine/scripts/gems.sh >> /opt/discovery-engine/logs/gems.log 2>&1
+
+# Production pack -> n8n webhook (N8N_WEBHOOK_URL) + reports/pack-latest.json.
+52 6 * * *  /opt/discovery-engine/scripts/run.sh export --send
+
+# Weekly backtest (precision@20 vs random) + composite-weight learning.
+23 5 * * 0  /opt/discovery-engine/scripts/run.sh backtest
 
 # Midday Wikipedia refresh (catches late-published days; cheap).
 17 16 * * * /opt/discovery-engine/scripts/run.sh collect --source wikipedia

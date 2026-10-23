@@ -10,6 +10,7 @@
     ode mine                       # long-tail questions, 1-star reviews, viral formats now
     ode backtest                   # did past top-20s really grow? learns composite weights
     ode export [--send]            # production pack JSON (stdout) / POST to N8N_WEBHOOK_URL
+    ode web [--port 8080]          # phone dashboard (DASHBOARD_PASSWORD)
     ode scheduler                  # ALWAYS-ON: runs every job on its schedule, forever
     ode realtime hourly|trends|breakout|plan   # run one realtime job now
     ode done <id> [--status started|published|dropped] [--hours 3] [--note ...]
@@ -432,7 +433,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("doctor", help="check config, database and every API")
     sub.add_parser("initdb", help="apply SQL schema (idempotent)")
-    sub.add_parser("daily", help="schema -> discover -> collect -> score -> briefs (cron)")
+    sub.add_parser("daily", help="discover -> collect -> score -> miners -> briefs (cron)")
     d = sub.add_parser("discover", help="refresh watchlists")
     d.add_argument("--market", action="append")
     c = sub.add_parser("collect", help="run collectors")
@@ -462,6 +463,9 @@ def main(argv: list[str] | None = None) -> int:
     ex.add_argument("--send", action="store_true",
                     help="POST to N8N_WEBHOOK_URL (once per day) + write reports/pack-latest.json")
     sub.add_parser("scheduler", help="always-on: run every job on its schedule, forever")
+    wb = sub.add_parser("web", help="phone dashboard (needs DASHBOARD_PASSWORD)")
+    wb.add_argument("--host", default="127.0.0.1")
+    wb.add_argument("--port", type=int, default=8080)
     rt = sub.add_parser("realtime", help="run one realtime job now")
     rt.add_argument("job", choices=["hourly", "trends", "breakout", "plan"])
     dn = sub.add_parser("done", help="mark a plan item as started/published/dropped")
@@ -505,6 +509,13 @@ def main(argv: list[str] | None = None) -> int:
         "gems": lambda: _gems(args.market, args.limit, args.format, args.min_confidence,
                               args.include_unknown, args.as_of),
     }
+    if args.cmd == "web":  # uvicorn runs its own event loop
+        from ode.web import serve
+        try:
+            return serve(load_config(), get_secrets(), args.host, args.port)
+        except ConfigError as exc:
+            print(f"config error: {exc}", file=sys.stderr)
+            return 2
     try:
         return asyncio.run(commands[args.cmd]())
     except ConfigError as exc:

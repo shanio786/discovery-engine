@@ -97,7 +97,7 @@ async def calibration(db: Database, config: Config) -> tuple[dict[str, float], d
     rows = [WorkRow(r["market"], r["platform"], r["views"], r["revenue_usd"], r["hours"])
             for r in await db.pool.fetch(
                 "SELECT market, platform, views, revenue_usd, hours FROM work_log "
-                "WHERE status = 'published' AND revenue_usd IS NOT NULL")]
+                "WHERE status = 'published' AND revenue_usd > 0")]
     return (calibrate_market_values(rows, priors,
-                                    pseudo_views=float(cfg.get("pseudo_views", 20_000))),
+                                    pseudo_views=float(cfg.get("pseudo_views", 100_000))),
             calibrate_platforms(rows, pseudo_items=float(cfg.get("pseudo_items", 3))))

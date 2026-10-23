@@ -33,18 +33,24 @@ class WorkRow:
     hours: float | None
 
 
+def _monetized(r: WorkRow) -> bool:
+    """Only results that already earn teach anything about value: a channel
+    earns $0 before it is monetized, and that says nothing about its market."""
+    return r.revenue is not None and r.revenue > 0
+
+
 def calibrate_market_values(rows: Iterable[WorkRow], priors: Mapping[str, float], *,
-                            pseudo_views: float = 20_000.0) -> dict[str, float]:
+                            pseudo_views: float = 100_000.0) -> dict[str, float]:
     """Market value blended from the prior and your real revenue per visitor.
 
     The prior counts as `pseudo_views` views at its implied RPV, so a market
-    needs real volume before your data dominates. Markets without data keep
-    their prior. Result clipped to [0.02, 3.0].
+    needs real volume before your data dominates. Markets without monetized
+    data keep their prior. Result clipped to [0.02, 3.0].
     """
     views: dict[str, float] = defaultdict(float)
     revenue: dict[str, float] = defaultdict(float)
     for r in rows:
-        if r.views and r.views > 0 and r.revenue is not None:
+        if r.views and r.views > 0 and _monetized(r):
             views[r.market] += r.views
             revenue[r.market] += r.revenue
     out = dict(priors)
@@ -61,7 +67,7 @@ def calibrate_platforms(rows: Iterable[WorkRow], *, pseudo_items: float = 3.0
     when hours are missing), relative to your overall average. Clipped [0.5, 2]."""
     per: dict[str, list[float]] = defaultdict(list)
     for r in rows:
-        if r.revenue is None:
+        if not _monetized(r):
             continue
         per[r.platform].append(r.revenue / r.hours if r.hours else r.revenue)
     allv = [x for v in per.values() for x in v]

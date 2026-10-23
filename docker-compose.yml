@@ -3,7 +3,8 @@
 #   docker compose up -d db
 #   docker compose run --rm app ode doctor
 #   docker compose run --rm app ode daily
-# Scheduling: host cron calls scripts/run.sh (see cron/crontab).
+# Always-on:  docker compose up -d scheduler web     (dashboard on 127.0.0.1:8080)
+# HTTPS:      docker compose --profile https up -d caddy   (DASHBOARD_DOMAIN in .env)
 
 services:
   db:
@@ -14,7 +15,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ode
     # Bound to localhost ONLY. The database is never reachable from the internet;
-    # the Phase-3 API runs on this host and is the only public surface.
+    # only Caddy (HTTPS, password-protected dashboard) is ever public.
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
@@ -31,9 +32,13 @@ services:
 
   app:
     build: .
+    image: ode-app:latest        # one image for app, scheduler and web
     env_file: .env
     environment:
       DATABASE_URL: postgresql://ode:${POSTGRES_PASSWORD}@db:5432/ode
+      ODE_REPORTS_DIR: /app/reports
+    volumes:
+      - ./reports:/app/reports
     depends_on:
       db:
         condition: service_healthy
@@ -46,6 +51,7 @@ services:
   # (both is harmless — the DB lock prevents overlap — just redundant).
   scheduler:
     build: .
+    image: ode-app:latest        # one image for app, scheduler and web
     command: ["ode", "scheduler"]
     restart: unless-stopped
     env_file: .env
@@ -61,5 +67,50 @@ services:
       driver: json-file
       options: {max-size: "50m", max-file: "5"}
 
+  # Phone dashboard. Localhost only: reach it via the `caddy` service (HTTPS on
+  # your domain) or an SSH tunnel:  ssh -L 8080:127.0.0.1:8080 you@vps
+  web:
+    build: .
+    image: ode-app:latest        # one image for app, scheduler and web
+    command: ["ode", "web", "--host", "0.0.0.0", "--port", "8080"]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://ode:${POSTGRES_PASSWORD}@db:5432/ode
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: "20m", max-file: "5"}
+
+  # Automatic HTTPS (Let's Encrypt) for the dashboard on your own domain.
+  # Point an A record (e.g. ode.yourdomain.com) at the VPS, set DASHBOARD_DOMAIN
+  # in .env, then:  docker compose --profile https up -d caddy
+  caddy:
+    image: caddy:2.8.4-alpine
+    profiles: ["https"]
+    restart: unless-stopped
+    environment:
+      DASHBOARD_DOMAIN: ${DASHBOARD_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:

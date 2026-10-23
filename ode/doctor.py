@@ -209,6 +209,17 @@ async def run_doctor(config: Config, secrets: Secrets) -> list[Check]:
 
         checks.append(await _guard("google trends", trends, required=False))
 
+        async def autocomplete() -> str:
+            from ode.miners import SUGGEST, parse_suggestions
+            got = parse_suggestions(await make_fetcher(config, client, "autocomplete").get_json(
+                SUGGEST, params={"client": "firefox", "hl": "en", "gl": "us",
+                                 "ie": "utf-8", "oe": "utf-8", "q": "how to"}))
+            if not got:
+                raise RuntimeError("no suggestions parsed (blocked? set HTTPS_PROXY)")
+            return f"{len(got)} suggestions, e.g. {got[0]!r}"
+
+        checks.append(await _guard("google autocomplete", autocomplete, required=False))
+
         if secrets.telegram_bot_token:
             async def telegram() -> str:
                 from ode.notify import TG_API
@@ -238,6 +249,15 @@ async def run_doctor(config: Config, secrets: Secrets) -> list[Check]:
             checks.append(Check("gemini", False, "GEMINI_API_KEY not set (briefs will skip)",
                                 required=False))
 
+    checks.append(Check("n8n webhook", bool(secrets.n8n_webhook_url),
+                        "set (pack POSTed daily, signed)" if secrets.n8n_webhook_url and
+                        secrets.n8n_webhook_secret else "set (unsigned: add N8N_WEBHOOK_SECRET)"
+                        if secrets.n8n_webhook_url else
+                        "N8N_WEBHOOK_URL not set (pack only written to reports/)",
+                        required=False))
+    checks.append(Check("dashboard", bool(secrets.dashboard_password),
+                        "password set" if secrets.dashboard_password else
+                        "DASHBOARD_PASSWORD not set (dashboard answers 503)", required=False))
     if db is not None:
         await db.close()
     return checks

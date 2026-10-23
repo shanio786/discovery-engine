@@ -35,16 +35,34 @@ rank / go viral there, comparable across languages: competing videos per daily
 searcher), **value** (money path × what a visitor is worth in that market),
 what is still unverified, and optional Gemini title ideas + outline.
 
+Each item also carries **research** mined for it:
+
+- **Questions people type** (Google Autocomplete, in that language and
+  country): every question is one article, video or short.
+- **1-star complaints** about the top Play Store apps (APP / TOOLSITE items):
+  the feature list of the better app.
+- **Proven viral formats**: small channels whose videos keep getting many
+  times their subscriber count, with their titles and a one-line formula.
+- **Shorts competition** measured separately from long-form competition.
+
+You close the loop: `ode done <id>` when you start an item (it never comes
+back), `ode result <id> --views … --revenue …` when it earns. The engine then
+learns what a visitor really pays in each market and which platform earns
+you the most per hour, and re-ranks the plan. Everything also works from the
+**phone dashboard** and goes to **n8n** as JSON every morning.
+
 ## Always on
 
-`docker compose up -d` starts a **scheduler** service that never stops
+`docker compose up -d scheduler web` starts a **scheduler** service that never stops
 (restarts itself after crashes and reboots) and runs, in UTC:
 
 | When | Job |
 |---|---|
-| 04:17 daily | full cycle: discover → collect → score → Gemini briefs |
+| 04:17 daily | full cycle: discover → collect → score → research miners → Gemini briefs |
 | 06:37 daily | `reports/plan-latest.md`, `gems-latest.md`, `gems-latest.csv` on the host |
 | 06:47 daily | Telegram: **today's plan** (top actions, one line each) |
+| 06:52 daily | production pack → your **n8n** webhook + `reports/pack-latest.json` |
+| weekly | **backtest**: did past top-20s really grow? learns composite weights |
 | every hour | Wikipedia **hourly** dumps → same-day spikes → alert |
 | every hour | Google Trends "trending now" in every market's country → alert |
 | every 6 h | breakout alert (7 days vs prior 7 > 3x, little competition) |
@@ -58,7 +76,7 @@ time to rank. 16 markets by default incl. **Urdu (Pakistan)**, Arabic,
 Korean and Vietnamese; any `<lang>-<REGION>` can be added. Set
 `HTTPS_PROXY` in `.env` to route all traffic through a proxy / VPN gateway.
 
-## Status: Phases 1–2 (harvest, discovery, scoring) + action plan + realtime ✅
+## Status ✅ harvest · discovery · scoring · action plan · realtime · research miners · learning · backtest · dashboard · n8n
 
 | Area | What exists |
 |---|---|
@@ -72,8 +90,13 @@ Korean and Vietnamese; any `<lang>-<REGION>` can be added. Set
 | **Ops** | `ode doctor` checks config, DB and every live API in seconds; every run recorded in `collector_runs` as ok / partial / skipped / error. |
 | **Scoring** | Momentum by acceleration (spec model) with spike persistence and a significance test, demand / money / gap / competition, composite, confidence, saturation forecast, cross-language gaps. Top discovered topics are queued for a free YouTube check the next day. |
 | **Action plan** | `ode plan`: platform + language + why + steps for the best opportunities, spread over markets; cross-language "be first" actions; Play Store gap check; optional Gemini briefs (titles, outline, hours). |
+| **Research miners** | Google Autocomplete long-tail questions (question starters per language, a–z for Latin scripts), 1-star Play Store reviews of the top apps, serial-outlier channels → viral formats (+ Gemini formula), YouTube short-video competition. |
+| **Learning** | Stable id per plan item; work log (started / published / dropped + views, revenue, hours); done items never return; monetized results recalibrate market values and platform weights (damped by priors). |
+| **Backtest** | Real scorer at past cut-offs (no lookahead), precision@20 vs the random base rate on a bias-safe universe; grid-searched composite weights adopted only when clearly better on most cut-offs. Report headers show the measured numbers. |
+| **Dashboard** | Phone-first, no JavaScript: plan, item detail with all research, one-tap done/drop, revenue form, work log, gems, alerts. Basic auth + lockout + CSRF + strict headers; HTTPS on your domain via Caddy. |
+| **n8n** | Daily production pack (JSON) POSTed to `N8N_WEBHOOK_URL`, HMAC-signed with `N8N_WEBHOOK_SECRET`. |
 | **Output** | `ode gems`: a ranked shortlist with a plain-language *why* for every row (terminal, Markdown, CSV); written daily to `reports/latest.md`. |
-| **Tests** | 133 tests: parsers, HTTP behaviour, config, momentum edge cases (sparse, single spikes, all-zeros, noise robustness), every score component, and integration tests on a real TimescaleDB (discovery → collection → scoring, no-lookahead guarantee). CI on every push. |
+| **Tests** | 200+ tests: parsers, HTTP behaviour, config, momentum edge cases (sparse, single spikes, all-zeros, noise robustness), every score component, and integration tests on a real TimescaleDB (discovery → collection → scoring, no-lookahead guarantee). CI on every push. |
 
 Cost: **$0** beyond the VPS. Wikipedia, Wikidata and Hacker News need no keys;
 YouTube and Reddit are free and skip themselves cleanly until keys are set.
@@ -102,8 +125,8 @@ docker compose run --rm app ode daily
 docker compose run --rm app ode status
 docker compose run --rm app ode watchlist
 
-# 6. Hamesha chalne wala engine (scheduler) — cron ki zaroorat nahi
-docker compose up -d scheduler
+# 6. Hamesha chalne wala engine (scheduler) + phone dashboard — cron ki zaroorat nahi
+docker compose up -d scheduler web
 docker compose logs -f scheduler          # dekho kya kar raha hai
 # backups ke liye sirf ye ek cron line:
 (crontab -l 2>/dev/null; echo "7 3 * * * /opt/discovery-engine/scripts/backup.sh >> /opt/discovery-engine/logs/backup.log 2>&1") | crontab -
@@ -119,6 +142,41 @@ docker compose logs -f scheduler          # dekho kya kar raha hai
 
 Subah ka plan, BREAKOUT, "abhi uchal raha hai" (hourly spikes) aur Google
 Trends — sab phone par aayenge.
+
+### Phone dashboard (HTTPS, apne domain par)
+
+1. `.env` mein `DASHBOARD_PASSWORD=` (lamba password; user hamesha `ode`).
+2. Namecheap → apne domain ka **A record**, e.g. `ode` → VPS ka IP.
+3. `.env` mein `DASHBOARD_DOMAIN=ode.yourdomain.com`
+4. `./scripts/deploy.sh` (ya `docker compose --profile https up -d caddy`).
+   Caddy khud HTTPS certificate le leta hai. Phone par
+   `https://ode.yourdomain.com` kholo → plan, “Shuru kiya”, kamai likho.
+
+Domain nahi lagana? `ssh -L 8080:127.0.0.1:8080 root@VPS` aur phone/laptop par
+`http://localhost:8080`. Dashboard internet par kabhi bina HTTPS ke nahi khulta.
+
+### n8n (production automation)
+
+`.env` mein `N8N_WEBHOOK_URL=` (n8n ka *Webhook* node, POST) aur
+`N8N_WEBHOOK_SECRET=`. Har subah 06:52 par aaj ka poora plan JSON mein aata hai:
+har item ka `id`, platform, language, topic, steps, `questions`,
+`complaints`, `formats`, `also_in` languages aur Gemini `brief`. n8n mein
+header `X-ODE-Signature` (HMAC-SHA256 of body) check karo. Haath se:
+`docker compose run --rm app ode export` (sirf dikhata hai) /
+`ode export --send` (bhejta hai).
+
+### Kaam aur kamai ka hisaab (engine isi se seekhta hai)
+
+```bash
+docker compose run --rm app ode done 602c7fdd                 # shuru kiya (plan se hat jayega)
+docker compose run --rm app ode done 602c7fdd --status dropped
+docker compose run --rm app ode result 602c7fdd --views 15000 --revenue 21.40 --hours 6
+docker compose run --rm app ode worklog                       # total kamai, $/ghanta, kya seekha
+```
+
+`result` mein **ab tak ka total** likho (har dafa naya total). Sirf woh
+results seekhne mein gintay hain jin ki kamai > $0 (monetize hone se pehle
+ka $0 kisi market ko bura nahi banata). Ye sab dashboard se bhi hota hai.
 
 `ode doctor` mein sab `[OK]` aaye to system sahi chal raha hai.
 
@@ -146,9 +204,11 @@ competition hai, aur kis language mein abhi article hi nahi hai.
 - Pehle hafte zyada tar topics **UNKNOWN** honge (60 din ki history chahiye).
   Pehla run 13 mahine ki Wikipedia history le aata hai, to asal mein ye foran
   bharta hai; sirf naye discover hue topics ko waqt lagta hai.
-- Scores abhi **validated nahi** (Phase 7 backtest baqi hai). List ko shortlist
-  samjho jise aap khud verify karo, pakki prediction nahi. YouTube/Reddit
-ke `[warn]` sirf keys na hone ki wajah se hain.
+- **Backtest** har hafte chalta hai (`ode backtest`): pichhle 30/60/90 din pehle
+  ke top-20 mein se kitne sach mein barhe, random ke muqable mein. Report ke
+  upar yahi number likha hota hai. ~60 din ki history ke baad pehla result
+  aata hai; tab tak header "UNVALIDATED" kehta hai — list ko shortlist samjho.
+- YouTube/Reddit ke `[warn]` sirf keys na hone ki wajah se hain.
 
 Naya code aaye to bas `./scripts/deploy.sh` chalao.
 
@@ -159,9 +219,16 @@ Naya code aaye to bas `./scripts/deploy.sh` chalao.
 | Command | What it does |
 |---|---|
 | `ode doctor` | Config + DB + one tiny live request to every API, parsed with the real parsers. Run after every deploy. |
-| `ode daily` | Schema → discover → collect → score, under a lock. What cron runs. |
+| `ode daily` | Schema → discover → collect → score → miners → briefs, under a lock. What cron runs. |
 | `ode gems [--market de-DE] [--format table\|md\|csv] [--limit 30] [--min-confidence 0.5]` | The ranked shortlist with a *why* per row. `--include-unknown` also lists topics too new for a momentum phase. |
 | `ode plan [--format table\|md\|json]` | **What to do now**: platform + language + topic + why + first steps. |
+| `ode done <id> [--status started\|published\|dropped] [--hours H] [--note …]` | Log that you took a plan item; it never comes back. |
+| `ode result <id> --views N --revenue USD [--hours H]` | Totals so far for an item; the engine learns from monetized results. |
+| `ode worklog` | Your items, revenue, $/hour and what the engine learned. |
+| `ode mine` | Run the research miners now (questions, 1-star reviews, viral formats). |
+| `ode backtest` | Precision@20 of past rankings vs random; learns composite weights. |
+| `ode export [--send]` | Today's production pack as JSON / POST it to `N8N_WEBHOOK_URL`. |
+| `ode web [--host 0.0.0.0] [--port 8080]` | Phone dashboard (needs `DASHBOARD_PASSWORD`). |
 | `ode scheduler` | Always-on engine (what the `scheduler` compose service runs). |
 | `ode realtime hourly\|trends\|breakout\|plan` | Run one realtime job now. |
 | `ode alerts` | What was alerted (or would have been, without Telegram). |
@@ -234,8 +301,16 @@ absorbs its Wikidata entity's history if discovery saw it first).
 | Saturation | | Spec formula on monthly YouTube uploads: last 3 months vs months 10–12 ago → OPEN / NARROWING / CLOSING_FAST; UNKNOWN until those months exist (never guessed). |
 
 Every scoring read goes through `MetricReader`, which requires an `as_of` date
-and selects only rows with `date <= as_of`, so the Phase-7 backtest can reuse
-the scorer with zero lookahead.
+and selects only rows with `date <= as_of`, so the backtest reuses the exact
+scorer with zero lookahead.
+
+**Backtest:** cut-offs = newest data − 30 days − {0, 30, 60}. A topic "grew"
+when its next-30-day mean is ≥ 1.5× the previous 30 days. Only topics that were
+already tracked at the cut-off (or came from seeds / "more like this") are
+evaluated — topics admitted *because* they later trended would flatter the
+scorer. Composite weights (momentum exponent, demand, gap, competition; money
+is never tuned on growth) are grid-searched and adopted only when ≥ 5% better
+on average and better on most cut-offs.
 
 **YouTube quota (10k/day free):** seeds every 3 days (~102 units each), up to 8
 probes per market (top discovered topics without YouTube data), then a one-off
@@ -256,9 +331,9 @@ ODE_TEST_DATABASE_URL=postgresql://ode:<pw>@localhost:5432/ode pytest -q   # + D
 
 1. **Harvest + discovery** ← done
 2. **Momentum/acceleration + outlier scoring + composite v1** ← done
-3. FastAPI + dashboard
-4. DataForSEO verify layer (hard budget cap)
+3. **Dashboard** ← done (phone-first, HTTPS via Caddy)
+4. DataForSEO verify layer (hard budget cap, top 20/day) — next
 5. RunPod embeddings + HDBSCAN clustering + cross-language arbitrage view
-6. Serial outlier miner + format extraction
-7. Backtest harness + weight optimization
-8. Portfolio optimizer + alerts + brief generator
+6. **Serial outlier miner + format extraction** ← done
+7. **Backtest harness + weight optimization** ← done
+8. **Alerts + brief generator + learning from your results** ← done; competitor watch next

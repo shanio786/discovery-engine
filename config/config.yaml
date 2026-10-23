@@ -284,13 +284,19 @@ miners:
 export:
   max_items: 25                # items POSTed to N8N_WEBHOOK_URL per day
 
+# Phone dashboard (`ode web`, compose service `web`; login user "ode",
+# password DASHBOARD_PASSWORD). Put it behind Caddy for HTTPS on your domain.
+dashboard:
+  trust_proxy: true            # per-IP login lockout uses X-Forwarded-For (Caddy sets it)
+
 # Learning from YOUR results (`ode done` / `ode result`). Your real revenue per
 # visitor recalibrates market_value; your revenue per hour per platform
 # re-weights platforms. Priors count as this much evidence, so one lucky
 # video can't swing everything.
 learning:
   enabled: true
-  pseudo_views: 20000          # the prior market_value counts as 20k views of evidence
+  pseudo_views: 100000         # the prior market_value counts as 100k views of evidence
+                               # (only MONETIZED results count: $0 before YPP says nothing)
   pseudo_items: 3              # platform weight starts at 1.0 worth 3 results
 
 # ------------------------------------------------------------------

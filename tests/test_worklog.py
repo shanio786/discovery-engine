@@ -24,9 +24,13 @@ def test_market_calibration_is_damped_by_prior():
     assert 0.08 < small["ur-PK"] < 0.4
     # ... lots of real volume dominates it
     big = calibrate_market_values([WorkRow("ur-PK", "YOUTUBE", 500_000, 2500.0, 40)], priors)
-    assert big["ur-PK"] == pytest.approx(0.48, abs=0.03)
+    assert big["ur-PK"] == pytest.approx(0.43, abs=0.02)
     assert big["en-US"] == 1.0                      # untouched without data
     assert calibrate_market_values([WorkRow("ur-PK", "BLOG", 0, 1.0, 1)], priors) == priors
+    # not monetized yet ($0) says nothing about the market or the platform
+    unpaid = [WorkRow("ur-PK", "YOUTUBE", 90_000, 0.0, 30)]
+    assert calibrate_market_values(unpaid, priors) == priors
+    assert calibrate_platforms(unpaid) == {}
 
 
 def test_platform_calibration():
