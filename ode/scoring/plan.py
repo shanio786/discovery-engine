@@ -47,6 +47,13 @@ async def load_views(db: Database, config: Config, as_of: date) -> list[TopicVie
     from ode.competitors import recent_events
 
     rivals = await recent_events(db)
+    from ode.realtime.social import topic_signals
+
+    names = {}
+    for r in rows:
+        d = r["details"] if isinstance(r["details"], dict) else json.loads(r["details"] or "{}")
+        names[(r["topic_id"], r["market"])] = d.get("name") or ""
+    social = await topic_signals(db, names)
     ps: dict[tuple[int, str], dict[str, float]] = defaultdict(dict)
     for r in ps_rows:
         ps[(r["topic_id"], r["market"])][r["metric_name"]] = r["value"]
@@ -72,6 +79,7 @@ async def load_views(db: Database, config: Config, as_of: date) -> list[TopicVie
             niche=niches.get(r["topic_id"], (None, 0))[0],
             niche_size=niches.get(r["topic_id"], (None, 0))[1],
             competitors=rivals.get((r["topic_id"], r["market"]), []),
+            social=social.get((r["topic_id"], r["market"]), []),
         ))
     return views
 

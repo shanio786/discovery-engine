@@ -220,6 +220,16 @@ async def run_doctor(config: Config, secrets: Secrets) -> list[Check]:
 
         checks.append(await _guard("google autocomplete", autocomplete, required=False))
 
+        async def tiktok() -> str:
+            from ode.realtime.social import TIKTOK_URLS, fetch_tiktok, parse_hashtags
+            url = {**TIKTOK_URLS, **((config.social.get("tiktok") or {}).get("urls") or {})}
+            tags = parse_hashtags(await fetch_tiktok(client, url["hashtag"].format(cc="US")))
+            if not tags:
+                raise RuntimeError("page loaded but no hashtags found (layout changed?)")
+            return f"{len(tags)} US hashtags, top: #{tags[0]['name']}"
+
+        checks.append(await _guard("tiktok trends", tiktok, required=False))
+
         if secrets.telegram_bot_token:
             async def telegram() -> str:
                 from ode.notify import TG_API

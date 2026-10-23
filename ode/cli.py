@@ -15,7 +15,7 @@
     ode export [--send]            # production pack JSON (stdout) / POST to N8N_WEBHOOK_URL
     ode web [--port 8080]          # phone dashboard (DASHBOARD_PASSWORD)
     ode scheduler                  # ALWAYS-ON: runs every job on its schedule, forever
-    ode realtime hourly|trends|breakout|plan   # run one realtime job now
+    ode realtime hourly|trends|breakout|plan|social   # run one realtime job now
     ode done <id> [--status started|published|dropped] [--hours 3] [--note ...]
     ode result <id> --views 12000 --revenue 14.5   # totals so far: the engine learns
     ode track <url> [--id <plan id>] [--platform BLOG] [--keyword "..."]   # your published item
@@ -276,9 +276,11 @@ async def _briefs() -> int:
 async def _realtime(job: str) -> int:
     from ode.pipeline import http_client
     from ode.realtime import runner
+    from ode.realtime.social import social_job
 
     fn = {"hourly": runner.hourly_job, "trends": runner.trends_job,
-          "breakout": runner.breakout_job, "plan": runner.plan_message_job}[job]
+          "breakout": runner.breakout_job, "plan": runner.plan_message_job,
+          "social": social_job}[job]
     config, secrets = load_config(), get_secrets()
     db = await Database.connect(secrets.database_url)
     try:
@@ -620,7 +622,7 @@ def main(argv: list[str] | None = None) -> int:
     wb.add_argument("--host", default="127.0.0.1")
     wb.add_argument("--port", type=int, default=8080)
     rt = sub.add_parser("realtime", help="run one realtime job now")
-    rt.add_argument("job", choices=["hourly", "trends", "breakout", "plan"])
+    rt.add_argument("job", choices=["hourly", "trends", "breakout", "plan", "social"])
     dn = sub.add_parser("done", help="mark a plan item as started/published/dropped")
     dn.add_argument("id")
     dn.add_argument("--status", choices=["started", "published", "dropped"], default="started")

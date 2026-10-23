@@ -14,6 +14,7 @@ job on its own schedule, one at a time, forever:
     hourly_wiki    every N minutes               hourly dumps -> same-day spikes
     trends         every N minutes               Google Trends per country
     breakout       every N minutes               spec breakout alert (6h)
+    social         every N minutes               TikTok hashtags / sounds, YouTube most popular
     backtest       every N days                  precision@20 vs random + weight learning
 
 Last runs live in `scheduler_state`, so a restart never re-runs a job early.
@@ -67,6 +68,7 @@ def jobs_from_config(config: Config) -> list[Job]:
         Job("hourly_wiki", every=timedelta(minutes=int(every.get("hourly_wiki_minutes", 60)))),
         Job("trends", every=timedelta(minutes=int(every.get("trends_minutes", 60)))),
         Job("breakout", every=timedelta(minutes=int(every.get("breakout_minutes", 360)))),
+        Job("social", every=timedelta(minutes=int(every.get("social_minutes", 360)))),
         Job("backtest", every=timedelta(days=int(every.get("backtest_days", 7)))),
     ]
 
@@ -108,7 +110,7 @@ class Scheduler:
 
     def _runner(self, name: str) -> Callable[[Database], Awaitable[dict]]:
         from ode import backtest, competitors, content, export, pipeline
-        from ode.realtime import runner
+        from ode.realtime import runner, social
 
         async def with_client(fn, db: Database) -> dict:
             async with pipeline.http_client(self.config) as client:
@@ -128,6 +130,7 @@ class Scheduler:
             "hourly_wiki": lambda db: with_client(runner.hourly_job, db),
             "trends": lambda db: with_client(runner.trends_job, db),
             "breakout": lambda db: with_client(runner.breakout_job, db),
+            "social": lambda db: with_client(social.social_job, db),
         }
         return table[name]
 

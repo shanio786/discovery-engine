@@ -240,6 +240,10 @@ class Config:
         return dict(self._d.get("actions") or {})
 
     @property
+    def social(self) -> dict[str, Any]:
+        return dict(self._d.get("social") or {})
+
+    @property
     def competitors(self) -> dict[str, Any]:
         return dict(self._d.get("competitors") or {})
 

@@ -73,6 +73,7 @@ class TopicView:
     niche: str | None = None       # niche (cluster) label
     niche_size: int = 0
     competitors: list[dict[str, Any]] = field(default_factory=list)  # recent competitor events
+    social: list[str] = field(default_factory=list)   # "TikTok par #x trending" lines
     outlier: float | None = None
     unanswered: float | None = None
     missing_in: list[str] = field(default_factory=list)
@@ -301,20 +302,21 @@ def plan_topic(t: TopicView, *, config: Mapping[str, Any] | None = None,
             why.append(f"sponsors mil sakte hain: {t.money_paths['SPONSOR']}")
         add("YOUTUBE", ease * yt_penalty, value, why + yt_rival, list(no_yt))
 
-    # --- SHORTS: ride a rising trend; lower RPM, huge reach
-    if t.phase in ("BREAKOUT", "GROWING"):
-        trend = 90.0 if t.phase == "BREAKOUT" else 70.0
+    # --- SHORTS: ride a rising trend (or a live TikTok / YouTube trend); lower RPM, huge reach
+    if t.phase in ("BREAKOUT", "GROWING") or t.social:
+        trend = 90.0 if t.phase == "BREAKOUT" else 70.0 if t.phase == "GROWING" else 60.0
         sd_short = supply_demand_ease(t.competing_shorts, t.mean30, sat_ratio)
         why = [*base_why, ("short-form trend ke shuru mein sab se tez barhta hai; ek AI video "
                            "teen platforms (Shorts, TikTok, Reels) par")]
+        why += [f"🔥 {s}" for s in t.social]
         if t.competing_shorts is not None:
             why.append(f"pichhle 180 din mein sirf {t.competing_shorts:,.0f} competing short "
                        f"videos (shorts ease {sd_short:.0f}/100)" if sd_short is not None and
                        sd_short >= 50 else
                        f"pichhle 180 din mein {t.competing_shorts:,.0f} competing short videos")
         no_short = [] if t.competing_shorts is not None else no_yt
-        add("SHORTS", _mean([trend, sd_short if sd_short is not None else sd], trend)
-            * yt_penalty, _clip(value * 0.6), why + yt_rival,
+        add("SHORTS", min(100.0, _mean([trend, sd_short if sd_short is not None else sd], trend)
+                          + (10.0 if t.social else 0.0)) * yt_penalty, _clip(value * 0.6), why + yt_rival,
             [*no_short, ("TikTok/Instagram ka direct data nahi (free API nahi): trend YouTube "
                         "aur Wikipedia se")])
 

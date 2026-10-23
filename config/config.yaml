@@ -281,6 +281,20 @@ miners:
     within_days: 365
     max_formulas: 5            # Gemini one-line format formula per run (GEMINI_API_KEY)
 
+# Social trends (scheduler job `social`, `ode realtime social`).
+social:
+  tiktok:                      # TikTok Creative Center (public; best effort — use HTTPS_PROXY)
+    enabled: true
+    sounds: true
+    keep: 50                   # top hashtags / sounds stored per country
+    rise_min: 20               # rank jump that counts as "rising"
+    top_new: 20                # ... or a new entry in the top 20
+    max_alerts_per_run: 3      # per country
+    # urls: {hashtag: "...{cc}...", sound: "...{cc}..."}   # override if TikTok moves pages
+  youtube:                     # YouTube most popular per country (1 quota unit each)
+    enabled: true
+    max_results: 50
+
 # Competitor watch (`ode competitors`): is the window on YOUR topics closing?
 competitors:
   enabled: true
@@ -429,6 +443,7 @@ scheduler:
     trends_minutes: 60         # Google Trends per market
     breakout_minutes: 360      # spec: breakout alert check every 6h
     backtest_days: 7           # weekly backtest + weight learning
+    social_minutes: 360        # TikTok trends + YouTube most popular, every 6h
 
 # Hacker News is one global English audience: attribute it to ONE market so
 # en-US / en-GB never receive the same signal twice.
@@ -460,7 +475,8 @@ rate_limits:
   trends:     {rate: 0.5,  burst: 1}
   autocomplete: {rate: 1.0, burst: 2}
   dataforseo: {rate: 2.0, burst: 2}
-  embeddings: {rate: 2.0, burst: 2}   # Google suggest: polite (use HTTPS_PROXY if blocked)
+  embeddings: {rate: 2.0, burst: 2}
+  tiktok: {rate: 0.2, burst: 1}         # one page every 5 s   # Google suggest: polite (use HTTPS_PROXY if blocked)
   dumps:      {rate: 1.0,  burst: 1}
   hackernews: {rate: 5.0,  burst: 10}
 
