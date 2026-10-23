@@ -1,7 +1,7 @@
 """Harvest orchestration.
 
 `daily()` is the one entry point cron needs: apply schema -> discover ->
-collect -> score, all under a Postgres advisory lock so overlapping jobs can't race.
+collect -> score -> briefs, all under a Postgres advisory lock so overlapping jobs can't race.
 Every collector x market attempt is recorded in `collector_runs` as
 ok | partial | skipped | error, with item, error and quota counts. A failure
 in one collector or market never aborts the others.
@@ -152,8 +152,22 @@ async def score(config: Config, secrets: Secrets, *, as_of=None,
         await db.close()
 
 
-async def daily(config: Config, secrets: Secrets) -> dict[str, list[dict]]:
-    """Schema -> discovery -> collection -> scoring, under one lock. What cron runs."""
+async def _briefs(db: Database, config: Config, secrets: Secrets, today) -> dict:
+    """Gemini briefs for today's plan; never fails the daily run."""
+    from ode.briefs import generate_briefs
+    from ode.scoring.plan import build_plan
+
+    try:
+        plan = await build_plan(db, config, today)
+        async with http_client(config) as client:
+            return await generate_briefs(db, config, secrets, plan, client)
+    except Exception as exc:  # noqa: BLE001 - briefs are optional extras
+        log.warning("briefs.step_failed", error=str(exc)[:300])
+        return {"status": "error", "error": str(exc)[:200]}
+
+
+async def daily(config: Config, secrets: Secrets) -> dict:
+    """Schema -> discovery -> collection -> scoring -> briefs, under one lock (cron)."""
     from ode.discovery import Discoverer
     from ode.scoring.scorer import Scorer
 
@@ -165,7 +179,9 @@ async def daily(config: Config, secrets: Secrets) -> dict[str, list[dict]]:
             async with http_client(config) as client:
                 disc = await Discoverer(config, client, db).run()
                 coll = await _collect(db, config, secrets, client, None, None)
-            scored = await Scorer(config, db).run(datetime.now(UTC).date())
-        return {"discovery": disc, "collect": coll, "scoring": scored}
+            today = datetime.now(UTC).date()
+            scored = await Scorer(config, db).run(today)
+            briefs = await _briefs(db, config, secrets, today)
+        return {"discovery": disc, "collect": coll, "scoring": scored, "briefs": briefs}
     finally:
         await db.close()

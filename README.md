@@ -11,7 +11,25 @@ money there?"
 
 ---
 
-## Status: Phases 1–2 (harvest, discovery, scoring) ✅
+## What you get every morning: `reports/plan-latest.md`
+
+A ranked list of **what to do now** — platform, language, topic, why, and
+the first steps — across 12 languages:
+
+| Platform | When the engine recommends it |
+|---|---|
+| **Blog / website** | People search for it; few languages cover it; or a topic proven in one language has **no article at all** in another (be first there) |
+| **YouTube** (long tutorials) | Teachable / B2B topic; few competing videos per daily searcher; small channels out-performing their size |
+| **Shorts · TikTok · Reels** | The topic is in BREAKOUT / GROWING — ride the trend early, one video on three apps |
+| **Play Store app** | Utility intent (tracker / calculator / planner …) or the top apps are badly rated / abandoned while installs prove demand |
+| **Digital product** | How-to / professional audience that buys templates, scripts and mini-courses |
+
+No affiliate, no SaaS — by design. Each action shows **ease** (how easy to
+rank / go viral there, comparable across languages: competing videos per daily
+searcher), **value** (money path × what a visitor is worth in that market),
+what is still unverified, and optional Gemini title ideas + outline.
+
+## Status: Phases 1–2 (harvest, discovery, scoring) + action plan ✅
 
 | Area | What exists |
 |---|---|
@@ -24,6 +42,7 @@ money there?"
 | **Storage** | Postgres 16 + TimescaleDB hypertable, compression after 90 days, bulk COPY upserts, nightly `pg_dump` backups. |
 | **Ops** | `ode doctor` checks config, DB and every live API in seconds; every run recorded in `collector_runs` as ok / partial / skipped / error. |
 | **Scoring** | Momentum by acceleration (spec model) with spike persistence and a significance test, demand / money / gap / competition, composite, confidence, saturation forecast, cross-language gaps. Top discovered topics are queued for a free YouTube check the next day. |
+| **Action plan** | `ode plan`: platform + language + why + steps for the best opportunities, spread over markets; cross-language "be first" actions; Play Store gap check; optional Gemini briefs (titles, outline, hours). |
 | **Output** | `ode gems`: a ranked shortlist with a plain-language *why* for every row (terminal, Markdown, CSV); written daily to `reports/latest.md`. |
 | **Tests** | 133 tests: parsers, HTTP behaviour, config, momentum edge cases (sparse, single spikes, all-zeros, noise robustness), every score component, and integration tests on a real TimescaleDB (discovery → collection → scoring, no-lookahead guarantee). CI on every push. |
 
@@ -47,7 +66,7 @@ nano .env        # YOUTUBE_API_KEY, REDDIT_CLIENT_ID/SECRET (jab mil jayein)
 # 3. Database + image + self-check
 ./scripts/deploy.sh      # git pull, build, migrations, `ode doctor`
 
-# 4. Pehla poora run (pehli dafa 10-20 minute: ~13 mahine ki history aati hai)
+# 4. Pehla poora run (pehli dafa ~45-60 minute: 12 languages x 13 mahine ki history)
 docker compose run --rm app ode daily
 
 # 5. Dekho kya aaya
@@ -63,7 +82,9 @@ crontab cron/crontab
 ### Roz kya dekhna hai
 
 ```bash
-cat /opt/discovery-engine/reports/latest.md          # aaj ki gems list
+cat /opt/discovery-engine/reports/plan-latest.md     # AAJ KYA KARNA HAI (pehle ye)
+docker compose run --rm app ode plan                  # terminal mein, wohi list
+cat /opt/discovery-engine/reports/latest.md          # poori gems list
 docker compose run --rm app ode gems                  # terminal mein
 docker compose run --rm app ode gems --market de-DE --min-confidence 0.5
 ```
@@ -97,6 +118,8 @@ Naya code aaye to bas `./scripts/deploy.sh` chalao.
 | `ode doctor` | Config + DB + one tiny live request to every API, parsed with the real parsers. Run after every deploy. |
 | `ode daily` | Schema → discover → collect → score, under a lock. What cron runs. |
 | `ode gems [--market de-DE] [--format table\|md\|csv] [--limit 30] [--min-confidence 0.5]` | The ranked shortlist with a *why* per row. `--include-unknown` also lists topics too new for a momentum phase. |
+| `ode plan [--format table\|md\|json]` | **What to do now**: platform + language + topic + why + first steps. |
+| `ode briefs` | Gemini titles / outline / hours for today's top actions (max 5/day, needs `GEMINI_API_KEY`). |
 | `ode score [--as-of YYYY-MM-DD]` | Re-score from stored data (only rows dated ≤ as-of are read). |
 | `ode discover [--market de-DE]` | Refresh watchlists only. |
 | `ode collect [--source wikipedia] [--market en-US]` | Collect only. |

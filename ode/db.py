@@ -541,6 +541,20 @@ class DbState:
         )
         return [Probe(r["topic_key"], r["query"]) for r in rows]
 
+    async def top_topics(self, market: str, limit: int) -> list[Probe]:
+        rows = await self.db.pool.fetch(
+            """
+            SELECT t.topic_key, s.details->>'name' AS name
+            FROM scores s JOIN topics t ON t.id = s.topic_id
+            WHERE s.market = $1 AND t.topic_key IS NOT NULL
+              AND s.date = (SELECT max(date) FROM scores WHERE market = $1)
+              AND s.phase <> 'UNKNOWN'
+            ORDER BY s.composite DESC LIMIT $2
+            """,
+            market, limit,
+        )
+        return [Probe(r["topic_key"], r["name"]) for r in rows if r["name"]]
+
     async def mark_probed(self, market: str, topic_key: str) -> None:
         await self.db.pool.execute(
             "UPDATE probe_queue SET probed_at = now() WHERE market = $1 AND topic_key = $2",

@@ -44,7 +44,7 @@ def test_money_paths_and_no_affiliate():
     b2b = money_profile(["Power BI"], kind=None, audience="b2b", config=MONEY_CFG)
     assert b2b.primary == "SPONSOR" and b2b.score > 95  # 100 only with every path
     software = money_profile(["Obsidian"], kind="Q7397", audience=None, config=MONEY_CFG)
-    assert software.primary == "SPONSOR" and "Q7397" in software.paths["SPONSOR"]
+    assert software.primary == "SPONSOR" and software.paths["SPONSOR"] == "topic type: software"
     assert "AFFILIATE" not in str(MONEY_CFG).upper()
 
 

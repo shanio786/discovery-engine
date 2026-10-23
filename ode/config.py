@@ -200,6 +200,22 @@ class Config:
     def monetization(self) -> dict[str, Any]:
         return dict(self._d.get("monetization") or {})
 
+    def market_value(self, code: str) -> float:
+        """Relative value of a visitor in this market (US = 1.0). Default 0.5."""
+        return float((self._d.get("market_value") or {}).get(code, 0.5))
+
+    @property
+    def playstore(self) -> dict[str, Any]:
+        return dict(self._d.get("playstore") or {})
+
+    @property
+    def gemini(self) -> dict[str, Any]:
+        return dict(self._d.get("gemini") or {})
+
+    @property
+    def actions(self) -> dict[str, Any]:
+        return dict(self._d.get("actions") or {})
+
     def seed_by_key(self, topic_key: str) -> Seed | None:
         return next((s for s in self._seeds if s.topic_key == topic_key), None)
 

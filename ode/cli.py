@@ -5,6 +5,8 @@
     ode daily                      # schema -> discover -> collect -> score (cron)
     ode score [--as-of 2026-01-31] # (re)score from stored data
     ode gems [--market de-DE] [--format md|csv|table] [--limit 30]
+    ode plan [--format md|table|json]   # what to do NOW: platform + language + steps
+    ode briefs                     # Gemini titles/outline for today's top actions
     ode discover [--market de-DE]  # refresh watchlists only
     ode collect [--source wikipedia] [--market en-US]
     ode status [--limit 30]        # recent runs
@@ -89,7 +91,46 @@ async def _daily() -> int:
     print("collect:")
     rc = max(rc, _print_results(out["collect"]))
     print("scoring:")
-    return max(rc, _print_scoring(out["scoring"]))
+    rc = max(rc, _print_scoring(out["scoring"]))
+    b = out.get("briefs") or {}
+    print(f"briefs:\n  {b.get('status', '-'):8} made={b.get('made', 0)} {b.get('reason', '')}")
+    return rc
+
+
+async def _plan(fmt: str, as_of: date | None) -> int:
+    import json
+
+    from ode.scoring import plan as planmod
+
+    config = load_config()
+    db = await Database.connect(get_secrets().database_url)
+    day = as_of or datetime.now(UTC).date()
+    try:
+        plan = await planmod.build_plan(db, config, day)
+        if not plan:
+            print("no actions yet — run `ode daily` first", file=sys.stderr)
+            return 1
+        if fmt == "json":
+            print(json.dumps(planmod.plan_as_dicts(plan), ensure_ascii=False, default=str,
+                             indent=2))
+        elif fmt == "md":
+            briefs = await planmod.attach_briefs(db, plan,
+                                                 int(config.gemini.get("reuse_days", 14)))
+            print(planmod.render_plan_markdown(plan, day, briefs), end="")
+        else:
+            print(planmod.render_plan_table(plan))
+        return 0
+    finally:
+        await db.close()
+
+
+async def _briefs() -> int:
+    from ode.briefs import run_briefs
+
+    r = await run_briefs(load_config(), get_secrets())
+    print(f"  {r['status']:8} briefs made={r.get('made', 0)} errors={r.get('errors', 0)} "
+          f"{r.get('reason', '')}")
+    return 1 if r["status"] == "error" else 0
 
 
 async def _score(as_of: date | None, markets: list[str] | None) -> int:
@@ -188,7 +229,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("doctor", help="check config, database and every API")
     sub.add_parser("initdb", help="apply SQL schema (idempotent)")
-    sub.add_parser("daily", help="schema -> discover -> collect (cron entry point)")
+    sub.add_parser("daily", help="schema -> discover -> collect -> score -> briefs (cron)")
     d = sub.add_parser("discover", help="refresh watchlists")
     d.add_argument("--market", action="append")
     c = sub.add_parser("collect", help="run collectors")
@@ -208,6 +249,10 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--include-unknown", action="store_true",
                    help="also list topics with too little history for a momentum phase")
     g.add_argument("--as-of", type=date.fromisoformat)
+    pl = sub.add_parser("plan", help="what to do now: platform + language + why + steps")
+    pl.add_argument("--format", choices=["table", "md", "json"], default="table")
+    pl.add_argument("--as-of", type=date.fromisoformat)
+    sub.add_parser("briefs", help="Gemini briefs for today's top actions (GEMINI_API_KEY)")
     args = parser.parse_args(argv)
 
     commands = {
@@ -219,6 +264,8 @@ def main(argv: list[str] | None = None) -> int:
         "status": lambda: _status(args.limit),
         "watchlist": _watchlist,
         "score": lambda: _score(args.as_of, args.market),
+        "plan": lambda: _plan(args.format, args.as_of),
+        "briefs": _briefs,
         "gems": lambda: _gems(args.market, args.limit, args.format, args.min_confidence,
                               args.include_unknown, args.as_of),
     }

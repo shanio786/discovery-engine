@@ -8,7 +8,6 @@ backtest reuses this exact path with historical cut-off dates.
 from __future__ import annotations
 
 import json
-import re
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -29,16 +28,9 @@ from ode.scoring.components import (
     weighted_mean,
 )
 from ode.scoring.momentum import Momentum, MomentumParams, momentum_profile
+from ode.scoring.text import clean_query
 
 log = get_logger(__name__)
-
-_DISAMBIG = re.compile(r"\s*\([^)]*\)\s*$")
-
-
-def clean_query(name: str) -> str:
-    """'Obsidian (software)' -> 'Obsidian' (a YouTube-friendly query)."""
-    return _DISAMBIG.sub("", name).strip() or name
-
 
 @dataclass
 class TopicScore:

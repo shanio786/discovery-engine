@@ -171,6 +171,35 @@ async def run_doctor(config: Config, secrets: Secrets) -> list[Check]:
             checks.append(Check("reddit", False, "REDDIT_CLIENT_ID/SECRET not set "
                                 "(collector will skip)", required=False))
 
+        async def playstore() -> str:
+            import asyncio
+
+            from ode.collectors.playstore import _default_search, parse_installs
+            results = await asyncio.to_thread(_default_search(), "habit tracker", n_hits=5,
+                                              lang="en", country="us")
+            if not results or not results[0].get("appId"):
+                raise RuntimeError("no apps parsed — Play markup may have changed")
+            top = results[0]
+            return (f"{len(results)} apps; top: {top.get('title')!r} "
+                    f"{parse_installs(top.get('installs')) or '?'} installs")
+
+        checks.append(await _guard("play store", playstore, required=False))
+
+        if secrets.gemini_api_key:
+            async def gemini() -> str:
+                from ode.briefs import API
+                payload = await make_fetcher(config, client, "gemini").request_json(
+                    "POST", API.format(model=config.gemini.get("model", "gemini-2.5-flash")),
+                    headers={"x-goog-api-key": secrets.gemini_api_key},
+                    json_body={"contents": [{"role": "user", "parts": [{"text": "Reply: ok"}]}]})
+                if not (payload or {}).get("candidates"):
+                    raise RuntimeError("no candidates — key/model wrong?")
+                return f"model {config.gemini.get('model', 'gemini-2.5-flash')} answers"
+            checks.append(await _guard("gemini", gemini, required=False))
+        else:
+            checks.append(Check("gemini", False, "GEMINI_API_KEY not set (briefs will skip)",
+                                required=False))
+
     if db is not None:
         await db.close()
     return checks

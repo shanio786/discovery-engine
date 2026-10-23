@@ -3,14 +3,49 @@
 # Everything tunable lives here, not in code. Validated on load.
 # ==================================================================
 
-# Markets every collector runs across. Start lean, promote from all_markets.
-# Adding a market: add it here + (optionally) localized seed queries below +
-# a reddit scope. Wikipedia discovery works for any language automatically.
+# Markets every collector runs across. Wikipedia discovery, scoring and
+# YouTube probes work in ANY language automatically; Reddit only where a scope
+# is configured below, Hacker News only in its one English market.
+# Cost: ~2,000 tracked articles per market, all free. Remove markets you don't
+# want; add any `<lang>-<REGION>` (e.g. ko-KR, ar-SA, vi-VN).
 markets:
   - en-US
   - de-DE
+  - ja-JP
+  - fr-FR
+  - es-ES
+  - it-IT
+  - pt-BR
+  - nl-NL
+  - pl-PL
+  - tr-TR
+  - id-ID
+  - hi-IN
 
-all_markets: [en-US, en-GB, de-DE, ja-JP, pt-BR, es-ES, fr-FR, it-IT, nl-NL, pl-PL]
+all_markets: [en-US, en-GB, de-DE, ja-JP, fr-FR, es-ES, it-IT, pt-BR, nl-NL, pl-PL,
+              tr-TR, id-ID, hi-IN, ko-KR, ar-SA, vi-VN, sv-SE]
+
+# Relative value of one visitor per market (ads CPM / sponsor budgets), US = 1.0.
+# ROUGH public estimates — replace with your own RPM once you have revenue.
+# Low-value markets can still win: far less competition, easier to rank/go viral.
+market_value:
+  en-US: 1.00
+  en-GB: 0.85
+  de-DE: 0.85
+  nl-NL: 0.70
+  ja-JP: 0.75
+  sv-SE: 0.70
+  fr-FR: 0.60
+  ko-KR: 0.55
+  it-IT: 0.50
+  es-ES: 0.45
+  ar-SA: 0.45
+  pl-PL: 0.30
+  pt-BR: 0.25
+  tr-TR: 0.15
+  vi-VN: 0.12
+  id-ID: 0.12
+  hi-IN: 0.10
 
 wiki_project_overrides:
   en-US: en.wikipedia
@@ -122,7 +157,7 @@ discovery:
   top_days_back: 3              # daily: scan the last 3 available days
   bootstrap_days_back: 14       # first run: scan 2 weeks
   morelike_per_seed: 25
-  max_tracked_per_market: 2500  # watchlist cap per market (seeds never evicted)
+  max_tracked_per_market: 2000  # watchlist cap per market (seeds never evicted)
   stale_after_days: 45          # wiki_top/morelike items not re-seen -> inactive
   # Wikidata classes (direct P31) that are never content opportunities for this
   # operator: people, media releases, sports, elections, wiki meta pages.
@@ -170,10 +205,34 @@ reddit:
 youtube:
   max_results: 25
   seed_refresh_days: 3          # re-search a seed at most every 3 days
-  max_probes_per_market: 8      # top discovered topics checked per run (~102 units each)
+  max_probes_per_market: 4      # top discovered topics checked per run (~102 units each)
   probe_refresh_days: 30        # re-probe a topic after this long
   max_month_fills: 40           # monthly-upload backfill searches per run (100 units each)
   saturation_months: 12
+
+# Play Store: what apps exist for a topic and how good they are. Unofficial
+# scraper — throttled hard; failures never affect other sources.
+playstore:
+  max_queries_per_market: 12    # seeds + best-scoring topics, per run (~4 calls each)
+  refresh_days: 7               # re-check a topic at most weekly
+  top_apps: 3                   # detail-check this many top results
+  stale_after_days: 365         # top app not updated for a year = abandoned
+
+# Gemini briefs for the top actions (optional; needs GEMINI_API_KEY).
+gemini:
+  model: gemini-2.5-flash
+  max_briefs_per_day: 5
+  reuse_days: 14                # don't regenerate a brief for the same action sooner
+
+# Platform recommendations (`ode plan`): which format to build for a topic.
+actions:
+  top_n: 25                     # actions listed in the plan
+  per_market_max: 5             # spread the plan over markets
+  per_topic_max: 3              # e.g. Shorts + YouTube + Blog for one breakout
+  min_confidence: 0.0
+  # supply/demand: competing YouTube videos (180d) per daily Wikipedia view;
+  # at this ratio YouTube ease bottoms out
+  saturated_ratio: 100
 
 # Hacker News is one global English audience: attribute it to ONE market so
 # en-US / en-GB never receive the same signal twice.
@@ -199,6 +258,8 @@ rate_limits:
   wikidata:   {rate: 4.0,  burst: 4}
   youtube:    {rate: 5.0,  burst: 5}
   reddit:     {rate: 1.5,  burst: 5}    # ~100/min OAuth limit
+  playstore:  {rate: 1.0,  burst: 2}    # unofficial scraping: stay polite
+  gemini:     {rate: 0.5,  burst: 1}
   hackernews: {rate: 5.0,  burst: 10}
 
 # Parallel in-flight requests per source (the rate limit still applies).
@@ -208,6 +269,7 @@ concurrency:
   hackernews: 4
   reddit: 1
   youtube: 1
+  playstore: 1
 
 # Persisted daily quota caps. Calls that would exceed are refused, not failed.
 quotas:
@@ -215,6 +277,7 @@ quotas:
   reddit: null
   wikipedia: null
   hackernews: null
+  playstore: null
 
 youtube_unit_cost:
   search: 100
@@ -266,6 +329,11 @@ monetization:
   # comparison / review intent was affiliate territory -> deprioritised
   comparison_keywords: [" vs ", versus, best, review, comparison, alternative, vergleich, test]
   comparison_penalty: 0.7
+  # Human-readable names for the classes below (shown in reports).
+  class_labels: {Q7397: software, Q166142: application, Q9143: programming language,
+                 Q193424: web service, Q35127: website, Q235557: file format,
+                 Q11016: technology, Q2424752: product, Q68: computer, Q28640: profession,
+                 Q11862829: academic discipline}
   # Wikidata class (P31) -> eligible paths. Heuristic; extend as you learn.
   class_paths:
     Q7397: [PRODUCT, SPONSOR]      # software

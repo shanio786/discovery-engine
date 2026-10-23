@@ -105,8 +105,10 @@ def money_profile(
         paths.setdefault("SPONSOR", "B2B / professional audience (seed)")
         paths.setdefault("PRODUCT", "B2B audience buys templates/courses")
     if kind:
+        label = (config.get("class_labels") or {}).get(kind)
+        reason = f"topic type: {label}" if label else f"Wikidata class {kind}"
         for path in (config.get("class_paths") or {}).get(kind, []):
-            paths.setdefault(str(path).upper(), f"Wikidata class {kind}")
+            paths.setdefault(str(path).upper(), reason)
 
     ordered = sorted(paths, key=lambda p: rpv.get(p, 0.0), reverse=True)
     primary = ordered[0]

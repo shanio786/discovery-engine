@@ -30,6 +30,10 @@ class CollectorState(Protocol):
 
     async def mark_probed(self, market: str, topic_key: str) -> None: ...
 
+    async def top_topics(self, market: str, limit: int) -> list[Probe]:
+        """Best-scoring topics in the latest scores (topic_key, display name)."""
+        ...
+
 
 class InMemoryState:
     """Simple dict-backed state for tests and dry runs."""
@@ -40,12 +44,14 @@ class InMemoryState:
         last: dict[tuple[str, str, str], dict[str, date]] | None = None,
         observed: dict[tuple[str, str, str], dict[str, set[date]]] | None = None,
         probes: dict[str, list[Probe]] | None = None,
+        top: dict[str, list[Probe]] | None = None,
     ) -> None:
         self._watch = watch or {}
         self._last = last or {}
         self._observed = observed or {}
         self._pending = {m: list(v) for m, v in (probes or {}).items()}
         self._done: dict[str, list[Probe]] = {}
+        self._top = top or {}
 
     async def watchlist(self, market: str, kind: str) -> list[WatchItem]:
         return list(self._watch.get((market, kind), []))
@@ -62,6 +68,9 @@ class InMemoryState:
 
     async def probed(self, market: str) -> list[Probe]:
         return list(self._done.get(market, []))
+
+    async def top_topics(self, market: str, limit: int) -> list[Probe]:
+        return self._top.get(market, [])[:limit]
 
     async def mark_probed(self, market: str, topic_key: str) -> None:
         pending = self._pending.get(market, [])

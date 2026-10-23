@@ -20,7 +20,8 @@ import httpx
 
 from ode.ratelimit import AsyncTokenBucket, RateLimit, RetryableHTTPError, with_backoff
 
-SECRET_PARAMS = {"key", "api_key", "apikey", "token", "access_token", "client_secret", "password"}
+SECRET_PARAMS = {"key", "api_key", "apikey", "token", "access_token", "client_secret", "password",
+                 "x-goog-api-key"}
 MAX_RETRY_AFTER_SECONDS = 60.0
 
 
@@ -88,6 +89,7 @@ class HttpFetcher:
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
         data: dict[str, Any] | None = None,
+        json_body: Any | None = None,
         auth: tuple[str, str] | None = None,
         cost_units: int = 1,
     ) -> Any | None:
@@ -104,7 +106,8 @@ class HttpFetcher:
             await self.bucket.acquire(cost_units)
             self.requests += 1
             resp = await self.client.request(
-                method, url, params=params, headers=headers, data=data, auth=auth
+                method, url, params=params, headers=headers, data=data, json=json_body,
+                auth=auth,
             )
             if resp.status_code == 404:
                 return None

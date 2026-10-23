@@ -129,11 +129,6 @@ class YouTubeCollector(BaseCollector):
             return False, "YOUTUBE_API_KEY not set"
         return True, ""
 
-    def supports(self, market: Market) -> tuple[bool, str]:
-        if not self.config.queries_for(market):
-            return False, f"no seed queries in language '{market.language}'"
-        return True, ""
-
     async def _ordered_queries(self, market: Market) -> list[tuple[Seed, str]]:
         """Least-recently-searched first, so a quota-starved day still rotates
         through every seed over a few days instead of always the same ones."""
@@ -222,6 +217,12 @@ class YouTubeCollector(BaseCollector):
         today = datetime.now(UTC).date()
         published_after = since.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         signals: list[RawSignal] = []
+        if (not self.config.queries_for(market)
+                and not await self.state.pending_probes(market.code, 1)
+                and not await self.state.probed(market.code)):
+            self.skip_reason = (f"nothing to search in {market.code} yet: no seed queries in "
+                                f"'{market.language}' and no probes queued by the scorer")
+            return []
 
         # 1) seeds that are due (least recently searched first)
         last = await self.state.last_dates(market.code, self.name, "youtube_video_count")
