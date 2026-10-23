@@ -1,7 +1,7 @@
 """Harvest orchestration.
 
 `daily()` is the one entry point cron needs: apply schema -> discover ->
-collect -> score -> briefs, all under a Postgres advisory lock so overlapping jobs can't race.
+collect -> score -> miners -> briefs, all under a Postgres advisory lock so overlapping jobs can't race.
 Every collector x market attempt is recorded in `collector_runs` as
 ok | partial | skipped | error, with item, error and quota counts. A failure
 in one collector or market never aborts the others.
@@ -166,6 +166,29 @@ async def _briefs(db: Database, config: Config, secrets: Secrets, today) -> dict
         return {"status": "error", "error": str(exc)[:200]}
 
 
+async def _miners(db: Database, config: Config, secrets: Secrets) -> dict:
+    """Questions / complaints / formats for today's plan; never fails the daily run."""
+    from ode.miners import run_miners
+
+    try:
+        async with http_client(config) as client:
+            return await run_miners(db, config, secrets, client)
+    except Exception as exc:  # noqa: BLE001 - research is an extra
+        log.warning("miners.step_failed", error=str(exc)[:300])
+        return {"status": "error", "error": str(exc)[:200]}
+
+
+async def mine(config: Config, secrets: Secrets) -> dict:
+    from ode.miners import run_miners
+
+    db = await Database.connect(secrets.database_url)
+    try:
+        async with db.harvest_lock(), http_client(config) as client:
+            return await run_miners(db, config, secrets, client)
+    finally:
+        await db.close()
+
+
 async def daily(config: Config, secrets: Secrets) -> dict:
     """Schema -> discovery -> collection -> scoring -> briefs, under one lock (cron)."""
     from ode.discovery import Discoverer
@@ -181,7 +204,9 @@ async def daily(config: Config, secrets: Secrets) -> dict:
                 coll = await _collect(db, config, secrets, client, None, None)
             today = datetime.now(UTC).date()
             scored = await Scorer(config, db).run(today)
+            mined = await _miners(db, config, secrets)
             briefs = await _briefs(db, config, secrets, today)
-        return {"discovery": disc, "collect": coll, "scoring": scored, "briefs": briefs}
+        return {"discovery": disc, "collect": coll, "scoring": scored, "miners": mined,
+                "briefs": briefs}
     finally:
         await db.close()

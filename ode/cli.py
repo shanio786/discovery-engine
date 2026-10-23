@@ -7,6 +7,7 @@
     ode gems [--market de-DE] [--format md|csv|table] [--limit 30]
     ode plan [--format md|table|json]   # what to do NOW: platform + language + steps
     ode briefs                     # Gemini titles/outline for today's top actions
+    ode mine                       # long-tail questions, 1-star reviews, viral formats now
     ode backtest                   # did past top-20s really grow? learns composite weights
     ode export [--send]            # production pack JSON (stdout) / POST to N8N_WEBHOOK_URL
     ode scheduler                  # ALWAYS-ON: runs every job on its schedule, forever
@@ -101,6 +102,11 @@ async def _daily() -> int:
     rc = max(rc, _print_results(out["collect"]))
     print("scoring:")
     rc = max(rc, _print_scoring(out["scoring"]))
+    print("miners:")
+    for name, r in (out.get("miners") or {}).items():
+        if isinstance(r, dict):
+            print(f"  {r.get('status', '-'):8} {name:12} " + " ".join(
+                f"{k}={v}" for k, v in r.items() if k != "status"))
     b = out.get("briefs") or {}
     print(f"briefs:\n  {b.get('status', '-'):8} made={b.get('made', 0)} {b.get('reason', '')}")
     return rc
@@ -133,6 +139,16 @@ async def _plan(fmt: str, as_of: date | None) -> int:
         return 0
     finally:
         await db.close()
+
+
+async def _mine() -> int:
+    from ode.pipeline import mine
+
+    out = await mine(load_config(), get_secrets())
+    for name, r in out.items():
+        print(f"  {r.get('status', '-'):8} {name:12} " + " ".join(
+            f"{k}={v}" for k, v in r.items() if k != "status"))
+    return 1 if all(r.get("status") == "error" for r in out.values()) else 0
 
 
 async def _backtest() -> int:
@@ -440,6 +456,7 @@ def main(argv: list[str] | None = None) -> int:
     pl.add_argument("--format", choices=["table", "md", "json"], default="table")
     pl.add_argument("--as-of", type=date.fromisoformat)
     sub.add_parser("briefs", help="Gemini briefs for today's top actions (GEMINI_API_KEY)")
+    sub.add_parser("mine", help="questions, 1-star reviews, viral formats for today's plan")
     sub.add_parser("backtest", help="precision@k of past rankings vs random; learn weights")
     ex = sub.add_parser("export", help="production pack JSON for n8n / automation")
     ex.add_argument("--send", action="store_true",
@@ -477,6 +494,7 @@ def main(argv: list[str] | None = None) -> int:
         "briefs": _briefs,
         "export": lambda: _export(args.send),
         "backtest": _backtest,
+        "mine": _mine,
         "scheduler": _scheduler,
         "realtime": lambda: _realtime(args.job),
         "alerts": lambda: _alerts(args.limit),

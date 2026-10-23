@@ -40,9 +40,8 @@ CREATE TABLE IF NOT EXISTS app_complaints (
     content     TEXT NOT NULL,
     at          TIMESTAMPTZ,
     fetched_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (app_id, review_id)
+    PRIMARY KEY (topic_id, market, app_id, review_id)   -- one app can serve many topics
 );
-CREATE INDEX IF NOT EXISTS idx_app_complaints_topic ON app_complaints (topic_id, market);
 
 -- Repeatable formats mined from serial-outlier channels.
 CREATE TABLE IF NOT EXISTS formats (

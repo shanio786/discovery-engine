@@ -122,3 +122,16 @@ def test_steps_are_ai_produced_and_never_affiliate_saas_or_selling():
         assert "ai" in text
         for banned in ("affiliate", "gumroad", "payhip", "becho", "course"):
             assert banned not in text
+
+
+def test_shorts_use_their_own_competition():
+    def shorts(**kw):
+        return next(a for a in plan_topic(view(**kw)) if a.platform == "SHORTS")
+    # long-form crowded, shorts empty: shorts must look easy, and say why
+    empty = shorts(competing_videos=50_000, competing_shorts=100)
+    crowded = shorts(competing_videos=50_000, competing_shorts=60_000)
+    assert empty.ease > crowded.ease
+    assert any("competing short videos" in w for w in empty.why)
+    assert not any("YouTube competition abhi naapi" in u for u in empty.unverified)
+    fallback = shorts(competing_videos=50_000)                  # no shorts data: long-form ease
+    assert fallback.ease == crowded.ease or fallback.ease < empty.ease

@@ -218,6 +218,8 @@ youtube:
   probe_refresh_days: 30        # re-probe a topic after this long
   max_month_fills: 40           # monthly-upload backfill searches per run (100 units each)
   saturation_months: 12
+  shorts_competition: true      # extra search (100 units) for short videos per topic ...
+  max_shorts_checks: 6          # ... for at most this many topics per market per run
 
 # Play Store: what apps exist for a topic and how good they are. Unofficial
 # scraper — throttled hard; failures never affect other sources.
@@ -254,6 +256,29 @@ backtest:
   learn_weights: true          # grid-search composite weights on the samples
   apply_learned_weights: true  # scorer uses them — only once they clearly beat the config
   min_improvement: 0.05        # >= 5% better mean lift AND better on most cut-offs
+
+# Research miners (run in `ode daily` after scoring, and by `ode mine`).
+miners:
+  autocomplete:                # Google Autocomplete long-tail questions per plan topic
+    enabled: true
+    max_topics: 15             # unique plan topics per run (~32 requests each, 1/s)
+    refresh_days: 7
+    max_per_topic: 40
+    letters: true              # also "<topic> a" … "<topic> z" (Latin-script languages)
+  complaints:                  # 1-star Play Store reviews for APP / TOOLSITE plan items
+    enabled: true
+    max_topics: 8
+    top_apps: 3
+    per_app: 6
+    refresh_days: 14
+  formats:                     # serial outliers: small channels that keep going viral
+    enabled: true
+    min_multiple: 5.0          # a hit = views >= 5x the channel's subscribers
+    min_outliers: 2            # ... at least this many hits
+    min_subs: 100
+    max_subs: 200000           # small/medium channels only (a format, not a celebrity)
+    within_days: 365
+    max_formulas: 5            # Gemini one-line format formula per run (GEMINI_API_KEY)
 
 # Production pack for your automation (n8n): `ode export`, scheduler job `export`.
 export:
@@ -308,8 +333,7 @@ seasonal:
 
 # Always-on scheduler (`ode scheduler`): what runs when (UTC).
 scheduler:
-  daily_at: "04:17"            # full cycle: schema -> discover -> collect -> score -> briefs
-  miners_at: "05:27"           # long-tail questions, 1-star reviews, viral formats (plan items)
+  daily_at: "04:17"            # full cycle: discover -> collect -> score -> miners -> briefs
   reports_at: "06:37"          # reports/plan-latest.md + gems-latest.md/.csv
   plan_message_at: "06:47"     # Telegram: today's plan
   export_at: "06:52"           # production pack -> N8N_WEBHOOK_URL + reports/pack-latest.json
@@ -349,6 +373,7 @@ rate_limits:
   gemini:     {rate: 0.5,  burst: 1}
   telegram:   {rate: 1.0,  burst: 3}
   trends:     {rate: 0.5,  burst: 1}
+  autocomplete: {rate: 1.0, burst: 2}   # Google suggest: polite (use HTTPS_PROXY if blocked)
   dumps:      {rate: 1.0,  burst: 1}
   hackernews: {rate: 5.0,  burst: 10}
 

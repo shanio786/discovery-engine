@@ -35,6 +35,8 @@ def make(state, quota_limit=9000, **yt):
 def mock_api():
     def search(request):
         p = request.url.params
+        if p.get("videoDuration") == "short":
+            return httpx.Response(200, json={"pageInfo": {"totalResults": 11}, "items": []})
         if p.get("maxResults") == "0":
             return httpx.Response(200, json={"pageInfo": {"totalResults": 42}, "items": []})
         return httpx.Response(200, json={"pageInfo": {"totalResults": 777},
@@ -70,7 +72,28 @@ async def test_seeds_then_probes_then_monthly_backfill():
     monthly = [s for s in sigs if s.metric_name == "youtube_monthly_uploads"]
     assert len(monthly) == 3 and all(s.value == 42 for s in monthly)  # fill cap = 3
     assert monthly[0].observed_at == completed_months(TODAY, 1)[0]
-    assert c.last_quota_used == 102 + 2 * 102 + 3 * 100
+    shorts = {s.topic_key: s.value for s in sigs if s.metric_name == "youtube_shorts_total"}
+    assert shorts == {"seed:raspberry_pi": 11, "wd:Q1": 11, "wd:Q2": 11}
+    assert c.last_quota_used == 102 + 2 * 102 + 3 * 100 + 3 * 100   # + one shorts search each
+
+
+@respx.mock
+async def test_shorts_checks_are_capped_and_optional():
+    mock_api()
+    state = InMemoryState(probes={"en-US": [Probe("wd:Q1", "Heat pump"),
+                                            Probe("wd:Q2", "Arduino")]})
+    c, client, _ = make(state, max_shorts_checks=1, max_month_fills=0)
+    off, client2, _ = make(InMemoryState(probes={"en-US": [Probe("wd:Q1", "Heat pump")]}),
+                           shorts_competition=False, max_month_fills=0)
+    try:
+        sigs = await c.collect(c.config.market("en-US"), datetime.now(UTC) - timedelta(days=180))
+        sigs2 = await off.collect(off.config.market("en-US"),
+                                  datetime.now(UTC) - timedelta(days=180))
+    finally:
+        await client.aclose()
+        await client2.aclose()
+    assert sum(s.metric_name == "youtube_shorts_total" for s in sigs) == 1
+    assert not any(s.metric_name == "youtube_shorts_total" for s in sigs2)
 
 
 @respx.mock

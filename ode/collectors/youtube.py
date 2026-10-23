@@ -124,6 +124,8 @@ class YouTubeCollector(BaseCollector):
     name = "youtube"
     cost = "free"  # free tier of a paid-capable API; quota-limited
 
+    _shorts_budget = 0
+
     def is_enabled(self) -> tuple[bool, str]:
         if not self.secrets.youtube_api_key:
             return False, "YOUTUBE_API_KEY not set"
@@ -177,7 +179,33 @@ class YouTubeCollector(BaseCollector):
         if total is not None:  # competing videos published in the lookback window
             signals.append(RawSignal("youtube", market.code, query, "youtube_total_results",
                                      float(total), observed, topic_key=topic_key))
+        if self._shorts_budget > 0:
+            self._shorts_budget -= 1
+            shorts = await self._shorts_total(market, query, published_after)
+            if shorts is not None:
+                signals.append(RawSignal("youtube", market.code, query, "youtube_shorts_total",
+                                         float(shorts), observed, topic_key=topic_key))
         return signals
+
+    async def _shorts_total(self, market: Market, query: str, published_after: str
+                            ) -> int | None:
+        """Competing SHORT videos (< 4 min, YouTube's closest filter to Shorts) in the
+        lookback window: Shorts competition is not long-form competition. Best effort:
+        a failure here never loses the topic's main data."""
+        if not await self.charge_quota(self.config.youtube_unit_cost["search"]):
+            self.notes.append(f"daily quota reached before shorts check '{query}'")
+            self._shorts_budget = 0
+            return None
+        try:
+            payload = await self.http.get_json(SEARCH, params={
+                **self._base_params(market, query), "maxResults": 0,
+                "videoDuration": "short", "publishedAfter": published_after})
+        except CircuitOpenError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - optional extra
+            self.log.warning("youtube.shorts_failed", query=query, error=str(exc)[:200])
+            return None
+        return parse_total_results(payload)
 
     async def _month_uploads(self, market: Market, topic_key: str, query: str,
                              month: date) -> list[RawSignal] | None:
@@ -217,6 +245,8 @@ class YouTubeCollector(BaseCollector):
         today = datetime.now(UTC).date()
         published_after = since.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         signals: list[RawSignal] = []
+        self._shorts_budget = (int(yt.get("max_shorts_checks", 6))
+                               if yt.get("shorts_competition", True) else 0)
         if (not self.config.queries_for(market)
                 and not await self.state.pending_probes(market.code, 1)
                 and not await self.state.probed(market.code)):

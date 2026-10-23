@@ -4,7 +4,6 @@ One long-running process (a restart-always Docker service) that runs every
 job on its own schedule, one at a time, forever:
 
     daily          at scheduler.daily_at         full cycle (discover, collect, score, briefs)
-    miners         at scheduler.miners_at        questions, 1-star reviews, viral formats
     reports        at scheduler.reports_at       reports/plan-latest.md, gems-latest.md/.csv
     plan_message   at scheduler.plan_message_at  Telegram: today's plan
     export         at scheduler.export_at        production pack -> n8n webhook
@@ -54,7 +53,6 @@ def jobs_from_config(config: Config) -> list[Job]:
     every = s.get("every") or {}
     return [
         Job("daily", at=parse_at(s.get("daily_at", "04:17"))),
-        Job("miners", at=parse_at(s.get("miners_at", "05:27"))),
         Job("reports", at=parse_at(s.get("reports_at", "06:37"))),
         Job("plan_message", at=parse_at(s.get("plan_message_at", "06:47"))),
         Job("export", at=parse_at(s.get("export_at", "06:52"))),

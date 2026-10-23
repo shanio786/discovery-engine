@@ -145,6 +145,7 @@ class Scorer:
         hn = await rd.series(market.code, "hackernews", "hn_mentions", 90)
         outlier = await rd.series(market.code, "youtube", "youtube_max_outlier", 30)
         total = await rd.series(market.code, "youtube", "youtube_total_results", 30)
+        shorts = await rd.series(market.code, "youtube", "youtube_shorts_total", 30)
         monthly = await rd.series(market.code, "youtube", "youtube_monthly_uploads", 400)
         channels = await rd.video_channels(market.code)
         meta = await rd.topics(ids, market.code)
@@ -227,6 +228,7 @@ class Scorer:
                 "comparison_penalty": money.comparison_penalty,
                 "gap_parts": {k: round(v, 1) for k, v in gap_parts.items()},
                 "competing_videos_180d": comp_raw.get(key),
+                "competing_shorts_180d": _latest(shorts.get(tid)),
                 "wiki_langs": len(langs) or None,
                 # other configured languages with no article (this market obviously has data)
                 "missing_in": (sorted(configured_langs - langs - {market.language})

@@ -68,6 +68,7 @@ class TopicView:
     mean30: float | None = None
     change30: float | None = None
     competing_videos: float | None = None
+    competing_shorts: float | None = None   # short videos (< 4 min) in the same window
     outlier: float | None = None
     unanswered: float | None = None
     missing_in: list[str] = field(default_factory=list)
@@ -254,11 +255,19 @@ def plan_topic(t: TopicView, *, config: Mapping[str, Any] | None = None,
     # --- SHORTS: ride a rising trend; lower RPM, huge reach
     if t.phase in ("BREAKOUT", "GROWING"):
         trend = 90.0 if t.phase == "BREAKOUT" else 70.0
+        sd_short = supply_demand_ease(t.competing_shorts, t.mean30, sat_ratio)
         why = [*base_why, ("short-form trend ke shuru mein sab se tez barhta hai; ek AI video "
                            "teen platforms (Shorts, TikTok, Reels) par")]
-        add("SHORTS", _mean([trend, sd], trend), _clip(value * 0.6), why,
-            [*no_yt, ("TikTok/Instagram ka direct data nahi (free API nahi): trend YouTube aur "
-                     "Wikipedia se")])
+        if t.competing_shorts is not None:
+            why.append(f"pichhle 180 din mein sirf {t.competing_shorts:,.0f} competing short "
+                       f"videos (shorts ease {sd_short:.0f}/100)" if sd_short is not None and
+                       sd_short >= 50 else
+                       f"pichhle 180 din mein {t.competing_shorts:,.0f} competing short videos")
+        no_short = [] if t.competing_shorts is not None else no_yt
+        add("SHORTS", _mean([trend, sd_short if sd_short is not None else sd], trend),
+            _clip(value * 0.6), why,
+            [*no_short, ("TikTok/Instagram ka direct data nahi (free API nahi): trend YouTube "
+                        "aur Wikipedia se")])
 
     # --- BLOG: search demand; ranking difficulty needs SERP data (Phase 4)
     ease = _mean([sd, 60.0 if (t.wiki_langs or 99) < 15 else None], 50.0)

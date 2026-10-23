@@ -28,6 +28,16 @@ API = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateC
 def build_prompt(a: Action) -> str:
     lang = LANGUAGE_NAME.get(a.language, a.language)
     why = "\n".join(f"- {w}" for w in a.why)
+    research = ""
+    if a.questions:
+        research += ("\nReal search questions people type (Google Autocomplete) — cover the "
+                     "best ones:\n" + "\n".join(f"- {q}" for q in a.questions[:12]) + "\n")
+    if a.complaints:
+        research += ("\n1-star complaints about the current top apps — fix these:\n"
+                     + "\n".join(f"- {c[:200]}" for c in a.complaints[:5]) + "\n")
+    if a.formats:
+        research += "\nProven formats from small channels that keep going viral:\n" + "\n".join(
+            f"- {f.get('formula') or ' | '.join(f['titles'][:3])}" for f in a.formats[:3]) + "\n"
     return f"""You are a content strategist. Plan ONE piece of work.
 
 Platform: {PLATFORM_LABEL[a.platform]}
@@ -35,7 +45,7 @@ Language and audience: {lang} ({a.market})
 Topic: {a.topic}
 Evidence:
 {why}
-
+{research}
 The creator produces everything with AI and automation (AI script, AI voice,
 AI visuals, AI-written and AI-translated text, AI-coded tools and apps), so
 plan for a repeatable, automatable format that a solo creator can batch.
