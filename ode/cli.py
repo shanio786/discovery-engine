@@ -26,6 +26,7 @@
     ode worklog                    # what you did, what it earned, what was learned
     ode alerts [--limit 20]        # what the engine alerted (or would have)
     ode notify-test                # send a Telegram test message
+    ode notify "text"              # send any message (used by scripts/backup.sh on failure)
     ode discover [--market de-DE]  # refresh watchlists only
     ode collect [--source wikipedia] [--market en-US]
     ode status [--limit 30]        # recent runs
@@ -480,6 +481,21 @@ async def _notify_test() -> int:
         await db.close()
 
 
+async def _notify(text: str) -> int:
+    """Plain Telegram message; needs no database (the DB may be what failed)."""
+    from ode.notify import Notifier, html_escape
+    from ode.pipeline import http_client
+
+    config, secrets = load_config(), get_secrets()
+    async with http_client(config) as client:
+        n = Notifier(config, secrets, client, None)  # type: ignore[arg-type]
+        if not n.enabled:
+            print("TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set", file=sys.stderr)
+            return 1
+        await n._send(html_escape(text))
+    return 0
+
+
 async def _scheduler() -> int:
     from ode.scheduler import main as sched_main
 
@@ -653,6 +669,8 @@ def main(argv: list[str] | None = None) -> int:
     al = sub.add_parser("alerts", help="recent alerts")
     al.add_argument("--limit", type=int, default=20)
     sub.add_parser("notify-test", help="send a Telegram test message")
+    nt = sub.add_parser("notify", help="send a Telegram message")
+    nt.add_argument("text")
     args = parser.parse_args(argv)
 
     commands = {
@@ -684,6 +702,7 @@ def main(argv: list[str] | None = None) -> int:
         "content": lambda: _content(args.refresh),
         "untrack": lambda: _untrack(args.cid),
         "notify-test": _notify_test,
+        "notify": lambda: _notify(args.text),
         "gems": lambda: _gems(args.market, args.limit, args.format, args.min_confidence,
                               args.include_unknown, args.as_of),
     }
