@@ -4,6 +4,7 @@ One long-running process (a restart-always Docker service) that runs every
 job on its own schedule, one at a time, forever:
 
     daily          at scheduler.daily_at         full cycle (discover, collect, score, briefs)
+    miners         at scheduler.miners_at        questions, 1-star reviews, viral formats
     reports        at scheduler.reports_at       reports/plan-latest.md, gems-latest.md/.csv
     plan_message   at scheduler.plan_message_at  Telegram: today's plan
     export         at scheduler.export_at        production pack -> n8n webhook
@@ -11,6 +12,7 @@ job on its own schedule, one at a time, forever:
     hourly_wiki    every N minutes               hourly dumps -> same-day spikes
     trends         every N minutes               Google Trends per country
     breakout       every N minutes               spec breakout alert (6h)
+    backtest       every N days                  precision@20 vs random + weight learning
 
 Last runs live in `scheduler_state`, so a restart never re-runs a job early.
 A failing job is logged and retried at its next slot; the loop never dies.
@@ -52,6 +54,7 @@ def jobs_from_config(config: Config) -> list[Job]:
     every = s.get("every") or {}
     return [
         Job("daily", at=parse_at(s.get("daily_at", "04:17"))),
+        Job("miners", at=parse_at(s.get("miners_at", "05:27"))),
         Job("reports", at=parse_at(s.get("reports_at", "06:37"))),
         Job("plan_message", at=parse_at(s.get("plan_message_at", "06:47"))),
         Job("export", at=parse_at(s.get("export_at", "06:52"))),
@@ -59,6 +62,7 @@ def jobs_from_config(config: Config) -> list[Job]:
         Job("hourly_wiki", every=timedelta(minutes=int(every.get("hourly_wiki_minutes", 60)))),
         Job("trends", every=timedelta(minutes=int(every.get("trends_minutes", 60)))),
         Job("breakout", every=timedelta(minutes=int(every.get("breakout_minutes", 360)))),
+        Job("backtest", every=timedelta(days=int(every.get("backtest_days", 7)))),
     ]
 
 
@@ -94,7 +98,7 @@ class Scheduler:
             "ON CONFLICT (job) DO UPDATE SET last_run = EXCLUDED.last_run", job, when)
 
     def _runner(self, name: str) -> Callable[[Database], Awaitable[dict]]:
-        from ode import export, pipeline
+        from ode import backtest, export, pipeline
         from ode.realtime import runner
 
         async def with_client(fn, db: Database) -> dict:
@@ -108,6 +112,7 @@ class Scheduler:
             "plan_message": lambda db: with_client(runner.plan_message_job, db),
             "reports": lambda db: with_client(runner.reports_job, db),
             "export": lambda db: with_client(export.export_job, db),
+            "backtest": lambda db: backtest.run_backtest(self.config, db),
             "hourly_wiki": lambda db: with_client(runner.hourly_job, db),
             "trends": lambda db: with_client(runner.trends_job, db),
             "breakout": lambda db: with_client(runner.breakout_job, db),

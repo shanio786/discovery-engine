@@ -219,11 +219,14 @@ async def reports_job(config: Config, secrets: Secrets, db: Database, client) ->
     today = datetime.now(UTC).date()
     plan = await planmod.build_plan(db, config, today)
     briefs = await planmod.attach_briefs(db, plan, int(config.gemini.get("reuse_days", 14)))
-    files = {f"plan-{today}.md": planmod.render_plan_markdown(plan, today, briefs)}
+    from ode.backtest import validation_note
+
+    note = await validation_note(db)
+    files = {f"plan-{today}.md": planmod.render_plan_markdown(plan, today, briefs, note)}
     gems = await report.load_gems(db, today, limit=40)
     if gems:
         gaps = await report.cross_language_gaps(db, today, config.market_codes)
-        files[f"gems-{today}.md"] = report.render_markdown(gems, gaps, today)
+        files[f"gems-{today}.md"] = report.render_markdown(gems, gaps, today, note)
         files[f"gems-{today}.csv"] = report.render_csv(
             await report.load_gems(db, today, limit=200))
     for name, text in files.items():

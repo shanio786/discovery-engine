@@ -182,12 +182,15 @@ def composite_score(
     competition: float | None,
     weights: Mapping[str, float] | None = None,
 ) -> float:
-    """momentum x weighted geometric mean(demand, money, gap, 101 - competition).
+    """momentum^w x weighted geometric mean(demand, money, gap, 101 - competition).
 
     The spec's (D x M x G) / C, but bounded and zero-safe: a missing gap or
     competition counts as neutral, and no single factor can zero everything.
+    `weights["momentum"]` (default 1) is an exponent on the phase multiplier,
+    so the backtest can learn how much momentum should dominate.
     """
-    w = {"demand": 1.0, "money": 1.0, "gap": 1.0, "competition": 1.0, **(weights or {})}
+    w = {"demand": 1.0, "money": 1.0, "gap": 1.0, "competition": 1.0, "momentum": 1.0,
+         **(weights or {})}
     parts = {
         "demand": demand,
         "money": money,
@@ -196,7 +199,7 @@ def composite_score(
     }
     total = sum(w[k] for k in parts)
     geo = math.exp(sum(w[k] * math.log(max(1.0, v)) for k, v in parts.items()) / total)
-    return round(multiplier * geo, 3)
+    return round(multiplier ** w["momentum"] * geo, 3)
 
 
 def confidence_score(*, points: int, phase: str, demand_sources: int, has_gap: bool,

@@ -244,6 +244,17 @@ actions:
   # at this ratio YouTube ease bottoms out
   saturated_ratio: 100
 
+# Backtest (`ode backtest`, weekly in the scheduler): did past top-k really grow?
+backtest:
+  horizon_days: 30             # look this far after each cut-off
+  cutoff_offsets_days: [0, 30, 60]   # cut-offs = newest data - horizon - offset
+  growth_ratio: 1.5            # "grew" = next-30-day mean >= 1.5x the previous 30 days
+  k: 20                        # precision@20
+  min_universe: 50             # cut-offs with fewer evaluable topics are skipped
+  learn_weights: true          # grid-search composite weights on the samples
+  apply_learned_weights: true  # scorer uses them — only once they clearly beat the config
+  min_improvement: 0.05        # >= 5% better mean lift AND better on most cut-offs
+
 # Production pack for your automation (n8n): `ode export`, scheduler job `export`.
 export:
   max_items: 25                # items POSTed to N8N_WEBHOOK_URL per day
@@ -298,6 +309,7 @@ seasonal:
 # Always-on scheduler (`ode scheduler`): what runs when (UTC).
 scheduler:
   daily_at: "04:17"            # full cycle: schema -> discover -> collect -> score -> briefs
+  miners_at: "05:27"           # long-tail questions, 1-star reviews, viral formats (plan items)
   reports_at: "06:37"          # reports/plan-latest.md + gems-latest.md/.csv
   plan_message_at: "06:47"     # Telegram: today's plan
   export_at: "06:52"           # production pack -> N8N_WEBHOOK_URL + reports/pack-latest.json
@@ -307,6 +319,7 @@ scheduler:
     hourly_wiki_minutes: 60    # ingest the newest hourly dump + spike check
     trends_minutes: 60         # Google Trends per market
     breakout_minutes: 360      # spec: breakout alert check every 6h
+    backtest_days: 7           # weekly backtest + weight learning
 
 # Hacker News is one global English audience: attribute it to ONE market so
 # en-US / en-GB never receive the same signal twice.

@@ -125,8 +125,8 @@ def test_is_due_daily_and_interval():
 
 def test_jobs_from_config():
     names = [j.name for j in jobs_from_config(make_config())]
-    assert names == ["daily", "reports", "plan_message", "midday_wiki", "hourly_wiki", "trends",
-                     "breakout"]
+    assert names == ["daily", "miners", "reports", "plan_message", "export", "midday_wiki",
+                     "hourly_wiki", "trends", "breakout", "backtest"]
     assert parse_at("06:47") == time(6, 47, tzinfo=UTC)
 
 

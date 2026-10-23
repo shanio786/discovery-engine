@@ -122,6 +122,16 @@ class Scorer:
         self.s = config.scoring
         self.params = MomentumParams.from_config(self.s)
         self.markets = config.markets()
+        self.weights: dict[str, float] = dict(self.s.get("composite_weights") or {})
+
+    async def load_weights(self) -> dict[str, float]:
+        """Backtest-adopted composite weights when present (and allowed), else config."""
+        from ode.backtest import learned_weights
+
+        learned = await learned_weights(self.db, self.config)
+        if learned:
+            self.weights = learned
+        return self.weights
 
     async def score_market(self, market: Market, as_of: date) -> list[TopicScore]:
         rd = MetricReader(self.db, as_of)
@@ -187,7 +197,7 @@ class Scorer:
             competition = comp_norm.get(key)
             composite = composite_score(multiplier=mom.multiplier, demand=demand,
                                         money=money.score, gap=gap, competition=competition,
-                                        weights=self.s.get("composite_weights"))
+                                        weights=self.weights)
             confidence = confidence_score(
                 points=mom.points, phase=mom.phase,
                 demand_sources=sum(v is not None for v in parts.values()),
@@ -294,6 +304,7 @@ class Scorer:
 
     async def run(self, as_of: date, market_codes: list[str] | None = None) -> list[dict]:
         reports = []
+        await self.load_weights()
         for market in self.markets:
             if market_codes and market.code not in market_codes:
                 continue

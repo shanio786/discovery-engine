@@ -7,6 +7,7 @@
     ode gems [--market de-DE] [--format md|csv|table] [--limit 30]
     ode plan [--format md|table|json]   # what to do NOW: platform + language + steps
     ode briefs                     # Gemini titles/outline for today's top actions
+    ode backtest                   # did past top-20s really grow? learns composite weights
     ode export [--send]            # production pack JSON (stdout) / POST to N8N_WEBHOOK_URL
     ode scheduler                  # ALWAYS-ON: runs every job on its schedule, forever
     ode realtime hourly|trends|breakout|plan   # run one realtime job now
@@ -124,12 +125,36 @@ async def _plan(fmt: str, as_of: date | None) -> int:
         elif fmt == "md":
             briefs = await planmod.attach_briefs(db, plan,
                                                  int(config.gemini.get("reuse_days", 14)))
-            print(planmod.render_plan_markdown(plan, day, briefs), end="")
+            from ode.backtest import validation_note
+            print(planmod.render_plan_markdown(plan, day, briefs, await validation_note(db)),
+                  end="")
         else:
             print(planmod.render_plan_table(plan))
         return 0
     finally:
         await db.close()
+
+
+async def _backtest() -> int:
+    from ode.backtest import run_backtest
+
+    config = load_config()
+
+    async def run(db: Database) -> int:
+        r = await run_backtest(config, db)
+        if r["status"] != "ok":
+            print(f"  {r['status']}: {r.get('reason', '')}")
+            return 0
+        for c, x in r["per_cutoff"].items():
+            lift = f"{x['lift']:.2f}x" if x["lift"] is not None else "-"
+            print(f"  cutoff {c}: top-{x['k']} grew {x['hits']}/{x['k']} = {x['precision']:.0%}"
+                  f" · random {x['base_rate']:.0%} · lift {lift} · universe {x['universe']}")
+        print(f"\n  mean precision {r['precision']:.0%} vs random {r['base_rate']:.0%}"
+              f" · lift {r['lift']}x · weights "
+              + ("ADOPTED (better on most cut-offs)" if r["weights_adopted"]
+                 else "unchanged (no clear improvement)"))
+        return 0
+    return await _with_db(run)
 
 
 async def _export(send: bool) -> int:
@@ -302,6 +327,7 @@ async def _score(as_of: date | None, markets: list[str] | None) -> int:
 
 async def _gems(market: str | None, limit: int, fmt: str, min_conf: float, unknown: bool,
                 as_of: date | None) -> int:
+    from ode.backtest import validation_note
     from ode.scoring import report
 
     config = load_config()
@@ -318,9 +344,9 @@ async def _gems(market: str | None, limit: int, fmt: str, min_conf: float, unkno
         elif fmt == "md":
             gaps = await report.cross_language_gaps(db, day, [market] if market
                                                     else config.market_codes)
-            print(report.render_markdown(gems, gaps, day), end="")
+            print(report.render_markdown(gems, gaps, day, await validation_note(db)), end="")
         else:
-            print(report.UNVALIDATED)
+            print(await validation_note(db))
             print(report.render_table(gems))
         return 0
     finally:
@@ -414,6 +440,7 @@ def main(argv: list[str] | None = None) -> int:
     pl.add_argument("--format", choices=["table", "md", "json"], default="table")
     pl.add_argument("--as-of", type=date.fromisoformat)
     sub.add_parser("briefs", help="Gemini briefs for today's top actions (GEMINI_API_KEY)")
+    sub.add_parser("backtest", help="precision@k of past rankings vs random; learn weights")
     ex = sub.add_parser("export", help="production pack JSON for n8n / automation")
     ex.add_argument("--send", action="store_true",
                     help="POST to N8N_WEBHOOK_URL (once per day) + write reports/pack-latest.json")
@@ -449,6 +476,7 @@ def main(argv: list[str] | None = None) -> int:
         "plan": lambda: _plan(args.format, args.as_of),
         "briefs": _briefs,
         "export": lambda: _export(args.send),
+        "backtest": _backtest,
         "scheduler": _scheduler,
         "realtime": lambda: _realtime(args.job),
         "alerts": lambda: _alerts(args.limit),

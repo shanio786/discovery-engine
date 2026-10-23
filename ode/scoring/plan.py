@@ -122,11 +122,12 @@ async def attach_briefs(db: Database, plan: list[Action], days: int = 14) -> dic
 
 
 def render_plan_markdown(plan: list[Action], as_of: date,
-                         briefs: dict[int, dict] | None = None) -> str:
+                         briefs: dict[int, dict] | None = None,
+                         note: str = UNVALIDATED) -> str:
     briefs = briefs or {}
     out = [f"# Aaj kya karna hai — {as_of}", "",
            ("Har item: **kis platform par, kis language mein, kis topic par**, kyun, aur pehle "
-           "steps. Sab se upar wala sab se behtar."), "", f"> {UNVALIDATED}", ""]
+           "steps. Sab se upar wala sab se behtar."), "", f"> {note}", ""]
     if not plan:
         out.append("_Abhi koi action nahi — pehle `ode daily` chalao (60 din ki history chahiye)._")
     for i, a in enumerate(plan, 1):

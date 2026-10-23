@@ -19,8 +19,8 @@ from ode.db import Database
 PHASE_ICON = {"BREAKOUT": "🚀", "GROWING": "📈", "PEAKING": "⛰", "STABLE": "➖",
               "DECLINING": "📉", "UNKNOWN": "❔"}
 
-UNVALIDATED = ("Scores are UNVALIDATED: the Phase-7 backtest has not yet measured "
-               "precision@20. Treat this as a ranked shortlist to verify, not a forecast.")
+UNVALIDATED = ("Scores are UNVALIDATED: the backtest (`ode backtest`, weekly in the "
+               "scheduler) has not measured precision@20 yet. Treat this as a ranked shortlist to verify, not a forecast.")
 
 
 @dataclass
@@ -138,8 +138,9 @@ def render_table(gems: list[Gem]) -> str:
     return "\n".join(lines)
 
 
-def render_markdown(gems: list[Gem], gaps: list[dict[str, Any]], as_of: date) -> str:
-    out = [f"# Opportunity gems — {as_of}", "", f"> {UNVALIDATED}", ""]
+def render_markdown(gems: list[Gem], gaps: list[dict[str, Any]], as_of: date,
+                    note: str = UNVALIDATED) -> str:
+    out = [f"# Opportunity gems — {as_of}", "", f"> {note}", ""]
     market = None
     for g in gems:
         if g.market != market:

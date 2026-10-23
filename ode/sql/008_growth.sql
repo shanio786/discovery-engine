@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 
 -- Backtest runs: did the scorer's top-20 really grow? (precision@k vs random)
-CREATE TABLE IF NOT EXISTS backtests (
+CREATE TABLE IF NOT EXISTS backtest_runs (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     run_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     cutoff      DATE NOT NULL,
@@ -90,7 +90,7 @@ CREATE TABLE IF NOT EXISTS backtests (
     lift        DOUBLE PRECISION,          -- precision_k / base_rate
     weights     JSONB NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_backtests_run ON backtests (run_at DESC);
+CREATE INDEX IF NOT EXISTS idx_backtest_runs_run ON backtest_runs (run_at DESC);
 
 -- n8n / webhook exports already delivered (one per day per target).
 CREATE TABLE IF NOT EXISTS exports_sent (
