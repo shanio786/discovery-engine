@@ -249,6 +249,17 @@ async def run_doctor(config: Config, secrets: Secrets) -> list[Check]:
             checks.append(Check("gemini", False, "GEMINI_API_KEY not set (briefs will skip)",
                                 required=False))
 
+    if secrets.dataforseo_login and secrets.dataforseo_password:
+        async def dfs_balance() -> str:
+            from ode.dataforseo import DataForSEO
+            async with http_client(config) as client:
+                bal = await DataForSEO(config, secrets, client, db).balance() if db else None
+            budget = config.dataforseo.get("daily_budget_usd", 0.75)
+            return f"balance ${bal:,.2f}, daily cap ${budget}"
+        checks.append(await _guard("dataforseo", dfs_balance, required=False))
+    else:
+        checks.append(Check("dataforseo", False, "DATAFORSEO_LOGIN/PASSWORD not set "
+                            "(blog difficulty stays an estimate)", required=False))
     checks.append(Check("n8n webhook", bool(secrets.n8n_webhook_url),
                         "set (pack POSTed daily, signed)" if secrets.n8n_webhook_url and
                         secrets.n8n_webhook_secret else "set (unsigned: add N8N_WEBHOOK_SECRET)"

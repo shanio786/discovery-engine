@@ -146,6 +146,8 @@ class Scorer:
         outlier = await rd.series(market.code, "youtube", "youtube_max_outlier", 30)
         total = await rd.series(market.code, "youtube", "youtube_total_results", 30)
         shorts = await rd.series(market.code, "youtube", "youtube_shorts_total", 30)
+        seo = {m: await rd.series(market.code, "dataforseo", m, 120)
+               for m in ("gsv", "gsv_longtail", "kd", "cpc", "serp_weak_share")}
         monthly = await rd.series(market.code, "youtube", "youtube_monthly_uploads", 400)
         channels = await rd.video_channels(market.code)
         meta = await rd.topics(ids, market.code)
@@ -229,6 +231,8 @@ class Scorer:
                 "gap_parts": {k: round(v, 1) for k, v in gap_parts.items()},
                 "competing_videos_180d": comp_raw.get(key),
                 "competing_shorts_180d": _latest(shorts.get(tid)),
+                "google": {m: _latest(s.get(tid)) for m, s in seo.items()
+                           if _latest(s.get(tid)) is not None} or None,
                 "wiki_langs": len(langs) or None,
                 # other configured languages with no article (this market obviously has data)
                 "missing_in": (sorted(configured_langs - langs - {market.language})

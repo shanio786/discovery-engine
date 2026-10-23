@@ -178,6 +178,35 @@ async def _miners(db: Database, config: Config, secrets: Secrets) -> dict:
         return {"status": "error", "error": str(exc)[:200]}
 
 
+async def _guarded_step(name: str, coro) -> dict:
+    """Optional extras never fail the daily run."""
+    try:
+        return await coro
+    except Exception as exc:  # noqa: BLE001 - extras are isolated
+        log.warning("daily.step_failed", step=name, error=str(exc)[:300])
+        return {"status": "error", "error": str(exc)[:200]}
+
+
+async def _seo(db: Database, config: Config, secrets: Secrets) -> dict:
+    from ode.dataforseo import run_verify
+
+    async with http_client(config) as client:
+        return await run_verify(db, config, secrets, client)
+
+
+async def run_with_db(config: Config, secrets: Secrets, fn, *, lock: bool = True) -> dict:
+    """Open the DB (+ the harvest lock) and run `fn(db)`: for one-off CLI steps."""
+    db = await Database.connect(secrets.database_url)
+    try:
+        await db.init_schema()
+        if lock:
+            async with db.harvest_lock():
+                return await fn(db)
+        return await fn(db)
+    finally:
+        await db.close()
+
+
 async def mine(config: Config, secrets: Secrets) -> dict:
     from ode.miners import run_miners
 
@@ -205,8 +234,9 @@ async def daily(config: Config, secrets: Secrets) -> dict:
             today = datetime.now(UTC).date()
             scored = await Scorer(config, db).run(today)
             mined = await _miners(db, config, secrets)
+            seo = await _guarded_step("dataforseo", _seo(db, config, secrets))
             briefs = await _briefs(db, config, secrets, today)
         return {"discovery": disc, "collect": coll, "scoring": scored, "miners": mined,
-                "briefs": briefs}
+                "dataforseo": seo, "briefs": briefs}
     finally:
         await db.close()

@@ -69,6 +69,7 @@ class TopicView:
     change30: float | None = None
     competing_videos: float | None = None
     competing_shorts: float | None = None   # short videos (< 4 min) in the same window
+    google: Mapping[str, float] = field(default_factory=dict)  # DataForSEO: gsv, kd, serp_weak_share
     outlier: float | None = None
     unanswered: float | None = None
     missing_in: list[str] = field(default_factory=list)
@@ -126,6 +127,29 @@ def supply_demand_ease(competing_videos: float | None, mean30: float | None,
         return None
     ratio = competing_videos / mean30
     return round(_clip(100.0 * (1.0 - math.log1p(ratio) / math.log1p(saturated_ratio))), 1)
+
+
+def google_ease(g: Mapping[str, float]) -> tuple[float | None, list[str]]:
+    """Measured Google ease (0-100) + reasons, from keyword difficulty and how
+    many forum / user-content pages hold the top 10. None without data."""
+    kd, weak, gsv = g.get("kd"), g.get("serp_weak_share"), g.get("gsv")
+    why: list[str] = []
+    if gsv is not None:
+        tail = g.get("gsv_longtail")
+        why.append(f"Google: {gsv:,.0f} searches/mahina"
+                   + (f" + {tail:,.0f} long-tail sawalon par" if tail else ""))
+    if kd is None and weak is None:
+        return None, why
+    if kd is not None:
+        why.append(f"Google difficulty {kd:.0f}/100" + (" = aasaan" if kd < 30 else
+                                                          " = mushkil" if kd > 60 else ""))
+    if weak is not None and weak > 0:
+        why.append(f"top 10 mein {weak:.0%} forum / user pages (Reddit, Quora …) = "
+                   "achha article aage nikal sakta hai")
+    parts = [(100.0 - kd, 0.7) if kd is not None else None,
+             (100.0 * weak, 0.3) if weak is not None else None]
+    used = [p for p in parts if p]
+    return round(sum(v * w for v, w in used) / sum(w for _, w in used), 1), why
 
 
 def _mean(values: list[float | None], default: float | None = None) -> float | None:
@@ -269,19 +293,22 @@ def plan_topic(t: TopicView, *, config: Mapping[str, Any] | None = None,
             [*no_short, ("TikTok/Instagram ka direct data nahi (free API nahi): trend YouTube "
                         "aur Wikipedia se")])
 
-    # --- BLOG: search demand; ranking difficulty needs SERP data (Phase 4)
-    ease = _mean([sd, 60.0 if (t.wiki_langs or 99) < 15 else None], 50.0)
-    why = [*base_why, "log ise search kar rahe hain = blog traffic ka asal source"]
+    # --- BLOG: search demand; ranking difficulty measured by DataForSEO when available
+    g = t.google or {}
+    seo_ease, seo_why = google_ease(g)
+    ease = (seo_ease if seo_ease is not None
+            else _mean([sd, 60.0 if (t.wiki_langs or 99) < 15 else None], 50.0))
+    why = [*base_why, "log ise search kar rahe hain = blog traffic ka asal source", *seo_why]
     if t.wiki_langs is not None and t.wiki_langs < 15:
         why.append(f"sirf {t.wiki_langs} languages mein Wikipedia article = niche, kam competition")
-    add("BLOG", ease, value, why,
-        ["Google ranking difficulty abhi naapi nahi (Phase 4: DataForSEO top 20/din)"])
+    add("BLOG", ease, value, why, [] if seo_ease is not None else
+        ["Google ranking difficulty abhi naapi nahi (DataForSEO top 20/din mein aayega)"])
 
     # --- TOOLSITE: people want to calculate / convert / generate something
     if tool_intent:
         ps_gap = ps.get("ps_gap")
-        ease = _mean([ps_gap, 60.0 if t.tool_keyword else None], 50.0)
-        why = [*base_why]
+        ease = _mean([ps_gap, 60.0 if t.tool_keyword else None, seo_ease], 50.0)
+        why = [*base_why, *seo_why]
         if t.tool_keyword:
             why.append(f"log '{t.tool_keyword}' jaisa tool dhoondte hain = seedha tool traffic")
         if ps.get("ps_top_rating") is not None and ps["ps_top_rating"] < 4.2:

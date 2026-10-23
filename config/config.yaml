@@ -280,6 +280,17 @@ miners:
     within_days: 365
     max_formulas: 5            # Gemini one-line format formula per run (GEMINI_API_KEY)
 
+# DataForSEO verify layer (paid; needs DATAFORSEO_LOGIN / _PASSWORD). Real Google
+# search volume, keyword difficulty and the top 10 for the best blog / tool items.
+dataforseo:
+  enabled: true
+  daily_budget_usd: 0.75       # hard cap, persisted; calls that would exceed it are refused
+  max_topics: 20               # top plan items per day (BLOG / TOOLSITE)
+  platforms: [BLOG, TOOLSITE]
+  refresh_days: 30             # re-check a topic at most monthly
+  longtail_keywords: 9         # long-tail questions priced with the main keyword
+  est_cost_usd: {volume: 0.075, difficulty: 0.03, serp: 0.003}   # charged before each call
+
 # Production pack for your automation (n8n): `ode export`, scheduler job `export`.
 export:
   max_items: 25                # items POSTed to N8N_WEBHOOK_URL per day
@@ -379,7 +390,8 @@ rate_limits:
   gemini:     {rate: 0.5,  burst: 1}
   telegram:   {rate: 1.0,  burst: 3}
   trends:     {rate: 0.5,  burst: 1}
-  autocomplete: {rate: 1.0, burst: 2}   # Google suggest: polite (use HTTPS_PROXY if blocked)
+  autocomplete: {rate: 1.0, burst: 2}
+  dataforseo: {rate: 2.0, burst: 2}   # Google suggest: polite (use HTTPS_PROXY if blocked)
   dumps:      {rate: 1.0,  burst: 1}
   hackernews: {rate: 5.0,  burst: 10}
 

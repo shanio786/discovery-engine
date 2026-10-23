@@ -7,6 +7,7 @@
     ode gems [--market de-DE] [--format md|csv|table] [--limit 30]
     ode plan [--format md|table|json]   # what to do NOW: platform + language + steps
     ode briefs                     # Gemini titles/outline for today's top actions
+    ode seo                        # DataForSEO: real Google volume / difficulty (top 20, budget)
     ode mine                       # long-tail questions, 1-star reviews, viral formats now
     ode backtest                   # did past top-20s really grow? learns composite weights
     ode export [--send]            # production pack JSON (stdout) / POST to N8N_WEBHOOK_URL
@@ -103,6 +104,8 @@ async def _daily() -> int:
     rc = max(rc, _print_results(out["collect"]))
     print("scoring:")
     rc = max(rc, _print_scoring(out["scoring"]))
+    seo = out.get("dataforseo") or {}
+    print("dataforseo:\n  " + "  ".join(f"{k}={v}" for k, v in seo.items()))
     print("miners:")
     for name, r in (out.get("miners") or {}).items():
         if isinstance(r, dict):
@@ -140,6 +143,24 @@ async def _plan(fmt: str, as_of: date | None) -> int:
         return 0
     finally:
         await db.close()
+
+
+async def _step(fn_path: str) -> int:
+    """Run one optional pipeline step (module:function(db, config, secrets, client))."""
+    import importlib
+
+    from ode.pipeline import http_client, run_with_db
+
+    mod, _, name = fn_path.partition(":")
+    fn = getattr(importlib.import_module(mod), name)
+    config, secrets = load_config(), get_secrets()
+
+    async def run(db: Database) -> dict:
+        async with http_client(config) as client:
+            return await fn(db, config, secrets, client)
+    r = await run_with_db(config, secrets, run)
+    print("  " + "  ".join(f"{k}={v}" for k, v in r.items()))
+    return 1 if r.get("status") == "error" else 0
 
 
 async def _mine() -> int:
@@ -457,6 +478,7 @@ def main(argv: list[str] | None = None) -> int:
     pl.add_argument("--format", choices=["table", "md", "json"], default="table")
     pl.add_argument("--as-of", type=date.fromisoformat)
     sub.add_parser("briefs", help="Gemini briefs for today's top actions (GEMINI_API_KEY)")
+    sub.add_parser("seo", help="DataForSEO: Google volume / difficulty / SERP for top items")
     sub.add_parser("mine", help="questions, 1-star reviews, viral formats for today's plan")
     sub.add_parser("backtest", help="precision@k of past rankings vs random; learn weights")
     ex = sub.add_parser("export", help="production pack JSON for n8n / automation")
@@ -499,6 +521,7 @@ def main(argv: list[str] | None = None) -> int:
         "export": lambda: _export(args.send),
         "backtest": _backtest,
         "mine": _mine,
+        "seo": lambda: _step("ode.dataforseo:run_verify"),
         "scheduler": _scheduler,
         "realtime": lambda: _realtime(args.job),
         "alerts": lambda: _alerts(args.limit),
