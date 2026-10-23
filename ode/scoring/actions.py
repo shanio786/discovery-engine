@@ -72,6 +72,7 @@ class TopicView:
     google: Mapping[str, float] = field(default_factory=dict)  # DataForSEO: gsv, kd, serp_weak_share
     niche: str | None = None       # niche (cluster) label
     niche_size: int = 0
+    competitors: list[dict[str, Any]] = field(default_factory=list)  # recent competitor events
     outlier: float | None = None
     unanswered: float | None = None
     missing_in: list[str] = field(default_factory=list)
@@ -268,6 +269,22 @@ def plan_topic(t: TopicView, *, config: Mapping[str, Any] | None = None,
             round(ease, 1), round(val, 1), why, _steps(platform, t, LANGUAGE_NAME.get(lg, lg)),
             unverified, t.topic_id, source))
 
+    # --- competitors moving in: warn, and make it a little harder
+    rival = {e["kind"]: e for e in reversed(t.competitors)}
+    yt_rival: list[str] = []
+    if "big_channel" in rival:
+        ev = rival["big_channel"]
+        yt_rival.append(f"⚠️ bara channel aa gaya: {ev.get('channel')} ({ev.get('subs', 0):,} "
+                        "subs) — speed zaroori, ya narrow angle lo")
+    if "upload_surge" in rival:
+        ev = rival["upload_surge"]
+        yt_rival.append(f"⚠️ is hafte {ev.get('week_new', 0):,} nayi videos"
+                        + (f" (normal se {ev['multiple']:g}x)" if ev.get("multiple") else "")
+                        + " — khirki band ho rahi hai")
+    yt_penalty = 0.85 if yt_rival else 1.0
+    web_rival = ([f"⚠️ Google top 3 mein naya site: {rival['serp_newcomer'].get('domain')}"]
+                 if "serp_newcomer" in rival else [])
+
     # --- YOUTUBE: AI explainers work for almost any subject people look up
     if t.tutorial or "SPONSOR" in paths or t.demand >= 30:
         ease = _mean([sd, t.outlier, None if t.competition is None else 101 - t.competition], 50.0)
@@ -282,7 +299,7 @@ def plan_topic(t: TopicView, *, config: Mapping[str, Any] | None = None,
             why.append("how-to / tech audience: ads ka RPM zyada")
         if "SPONSOR" in paths:
             why.append(f"sponsors mil sakte hain: {t.money_paths['SPONSOR']}")
-        add("YOUTUBE", ease, value, why, list(no_yt))
+        add("YOUTUBE", ease * yt_penalty, value, why + yt_rival, list(no_yt))
 
     # --- SHORTS: ride a rising trend; lower RPM, huge reach
     if t.phase in ("BREAKOUT", "GROWING"):
@@ -296,8 +313,8 @@ def plan_topic(t: TopicView, *, config: Mapping[str, Any] | None = None,
                        sd_short >= 50 else
                        f"pichhle 180 din mein {t.competing_shorts:,.0f} competing short videos")
         no_short = [] if t.competing_shorts is not None else no_yt
-        add("SHORTS", _mean([trend, sd_short if sd_short is not None else sd], trend),
-            _clip(value * 0.6), why,
+        add("SHORTS", _mean([trend, sd_short if sd_short is not None else sd], trend)
+            * yt_penalty, _clip(value * 0.6), why + yt_rival,
             [*no_short, ("TikTok/Instagram ka direct data nahi (free API nahi): trend YouTube "
                         "aur Wikipedia se")])
 
@@ -309,7 +326,8 @@ def plan_topic(t: TopicView, *, config: Mapping[str, Any] | None = None,
     why = [*base_why, "log ise search kar rahe hain = blog traffic ka asal source", *seo_why]
     if t.wiki_langs is not None and t.wiki_langs < 15:
         why.append(f"sirf {t.wiki_langs} languages mein Wikipedia article = niche, kam competition")
-    add("BLOG", ease, value, why, [] if seo_ease is not None else
+    add("BLOG", ease * (0.9 if web_rival else 1.0), value, why + web_rival,
+        [] if seo_ease is not None else
         ["Google ranking difficulty abhi naapi nahi (DataForSEO top 20/din mein aayega)"])
 
     # --- TOOLSITE: people want to calculate / convert / generate something

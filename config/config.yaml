@@ -281,6 +281,15 @@ miners:
     within_days: 365
     max_formulas: 5            # Gemini one-line format formula per run (GEMINI_API_KEY)
 
+# Competitor watch (`ode competitors`): is the window on YOUR topics closing?
+competitors:
+  enabled: true
+  max_topics: 10               # topics checked per day (~102 YouTube units each)
+  top_plan: 5                  # + the top plan topics, besides your own work
+  big_subs: 250000             # a channel this big entering = alert
+  surge_ratio: 3.0             # uploads this week >= 3x a normal week = alert
+  surge_min_new: 10
+
 # Niches (`ode niches`, dashboard "Niches"): related topics grouped into one
 # channel / site idea. Embeddings from EMBEDDINGS_URL (+ _API_KEY): any
 # OpenAI-compatible /embeddings endpoint, e.g. a RunPod serverless
@@ -412,6 +421,7 @@ scheduler:
   week_day: 0                  # Monday: Telegram "is hafte ka plan" for your hours
   week_at: "06:57"
   export_at: "06:52"           # production pack -> N8N_WEBHOOK_URL + reports/pack-latest.json
+  competitors_at: "15:47"      # competitor watch on your topics (+ top plan topics)
   midday_wiki_at: "16:17"      # cheap refresh for late-published days
   backup_note: "backups run from host cron (scripts/backup.sh)"
   every:

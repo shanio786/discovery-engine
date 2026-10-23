@@ -10,6 +10,7 @@ job on its own schedule, one at a time, forever:
     export         at scheduler.export_at        production pack -> n8n webhook
     week           weekly (week_day, week_at)    Telegram: this week's plan for your hours
     midday_wiki    at scheduler.midday_wiki_at   cheap Wikipedia refresh
+    competitors    at scheduler.competitors_at   big channels / upload surges / new SERP leaders
     hourly_wiki    every N minutes               hourly dumps -> same-day spikes
     trends         every N minutes               Google Trends per country
     breakout       every N minutes               spec breakout alert (6h)
@@ -62,6 +63,7 @@ def jobs_from_config(config: Config) -> list[Job]:
         Job("export", at=parse_at(s.get("export_at", "06:52"))),
         Job("week", at=parse_at(s.get("week_at", "06:57")), weekday=int(s.get("week_day", 0))),
         Job("midday_wiki", at=parse_at(s.get("midday_wiki_at", "16:17"))),
+        Job("competitors", at=parse_at(s.get("competitors_at", "15:47"))),
         Job("hourly_wiki", every=timedelta(minutes=int(every.get("hourly_wiki_minutes", 60)))),
         Job("trends", every=timedelta(minutes=int(every.get("trends_minutes", 60)))),
         Job("breakout", every=timedelta(minutes=int(every.get("breakout_minutes", 360)))),
@@ -105,7 +107,7 @@ class Scheduler:
             "ON CONFLICT (job) DO UPDATE SET last_run = EXCLUDED.last_run", job, when)
 
     def _runner(self, name: str) -> Callable[[Database], Awaitable[dict]]:
-        from ode import backtest, content, export, pipeline
+        from ode import backtest, competitors, content, export, pipeline
         from ode.realtime import runner
 
         async def with_client(fn, db: Database) -> dict:
@@ -121,6 +123,7 @@ class Scheduler:
             "export": lambda db: with_client(export.export_job, db),
             "content": lambda db: with_client(content.content_job, db),
             "week": lambda db: with_client(runner.week_message_job, db),
+            "competitors": lambda db: with_client(competitors.watch_job, db),
             "backtest": lambda db: backtest.run_backtest(self.config, db),
             "hourly_wiki": lambda db: with_client(runner.hourly_job, db),
             "trends": lambda db: with_client(runner.trends_job, db),

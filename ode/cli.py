@@ -7,6 +7,7 @@
     ode gems [--market de-DE] [--format md|csv|table] [--limit 30]
     ode plan [--format md|table|json]   # what to do NOW: platform + language + steps
     ode briefs                     # Gemini titles/outline for today's top actions
+    ode competitors [--refresh]    # big channels / upload surges / new Google leaders on your topics
     ode niches [--refresh]         # related topics grouped: one channel / site per niche
     ode seo                        # DataForSEO: real Google volume / difficulty (top 20, budget)
     ode mine                       # long-tail questions, 1-star reviews, viral formats now
@@ -167,6 +168,34 @@ async def _step(fn_path: str) -> int:
     r = await run_with_db(config, secrets, run)
     print("  " + "  ".join(f"{k}={v}" for k, v in r.items()))
     return 1 if r.get("status") == "error" else 0
+
+
+async def _competitors(refresh: bool) -> int:
+    if refresh:
+        from ode import competitors
+        from ode.pipeline import http_client
+
+        config, secrets = load_config(), get_secrets()
+
+        async def go(db: Database) -> int:
+            async with http_client(config) as client:
+                r = await competitors.watch_job(config, secrets, db, client)
+            print("  " + "  ".join(f"{k}={v}" for k, v in r.items()))
+            return 0
+        await _with_db(go)
+
+    async def run(db: Database) -> int:
+        rows = await db.pool.fetch(
+            "SELECT e.kind, e.market, e.detail, e.seen_at, t.canonical_name FROM "
+            "competitor_events e LEFT JOIN topics t ON t.id = e.topic_id "
+            "ORDER BY e.seen_at DESC LIMIT 40")
+        if not rows:
+            print("no competitor events yet")
+        for r in rows:
+            print(f"  {r['seen_at']:%Y-%m-%d} {r['kind']:13} {r['market']:6} "
+                  f"{r['canonical_name']}  {str(r['detail'])[:90]}")
+        return 0
+    return await _with_db(run)
 
 
 async def _niches(refresh: bool, limit: int) -> int:
@@ -575,6 +604,8 @@ def main(argv: list[str] | None = None) -> int:
     pl.add_argument("--format", choices=["table", "md", "json"], default="table")
     pl.add_argument("--as-of", type=date.fromisoformat)
     sub.add_parser("briefs", help="Gemini briefs for today's top actions (GEMINI_API_KEY)")
+    co = sub.add_parser("competitors", help="competitor events on your topics")
+    co.add_argument("--refresh", action="store_true", help="check now")
     ni = sub.add_parser("niches", help="related topics grouped into channel / site niches")
     ni.add_argument("--refresh", action="store_true", help="re-embed + re-cluster now")
     ni.add_argument("--limit", type=int, default=20)
@@ -636,6 +667,7 @@ def main(argv: list[str] | None = None) -> int:
         "mine": _mine,
         "seo": lambda: _step("ode.dataforseo:run_verify"),
         "niches": lambda: _niches(args.refresh, args.limit),
+        "competitors": lambda: _competitors(args.refresh),
         "scheduler": _scheduler,
         "realtime": lambda: _realtime(args.job),
         "alerts": lambda: _alerts(args.limit),

@@ -44,6 +44,9 @@ async def load_views(db: Database, config: Config, as_of: date) -> list[TopicVie
         "SELECT t.id, c.label, c.size FROM topics t JOIN clusters c ON c.id = t.cluster_id "
         "WHERE t.id = ANY($1)", list({r["topic_id"] for r in rows}))
     niches = {r["id"]: (r["label"], r["size"]) for r in niche_rows}
+    from ode.competitors import recent_events
+
+    rivals = await recent_events(db)
     ps: dict[tuple[int, str], dict[str, float]] = defaultdict(dict)
     for r in ps_rows:
         ps[(r["topic_id"], r["market"])][r["metric_name"]] = r["value"]
@@ -68,6 +71,7 @@ async def load_views(db: Database, config: Config, as_of: date) -> list[TopicVie
             seasonal=d.get("seasonal"),
             niche=niches.get(r["topic_id"], (None, 0))[0],
             niche_size=niches.get(r["topic_id"], (None, 0))[1],
+            competitors=rivals.get((r["topic_id"], r["market"]), []),
         ))
     return views
 
