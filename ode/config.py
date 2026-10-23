@@ -51,6 +51,7 @@ class Secrets(BaseSettings):
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
     n8n_webhook_url: str | None = None
+    n8n_webhook_secret: str | None = None
     dashboard_password: str | None = None
 
 

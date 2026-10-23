@@ -244,6 +244,10 @@ actions:
   # at this ratio YouTube ease bottoms out
   saturated_ratio: 100
 
+# Production pack for your automation (n8n): `ode export`, scheduler job `export`.
+export:
+  max_items: 25                # items POSTed to N8N_WEBHOOK_URL per day
+
 # Learning from YOUR results (`ode done` / `ode result`). Your real revenue per
 # visitor recalibrates market_value; your revenue per hour per platform
 # re-weights platforms. Priors count as this much evidence, so one lucky
@@ -296,6 +300,7 @@ scheduler:
   daily_at: "04:17"            # full cycle: schema -> discover -> collect -> score -> briefs
   reports_at: "06:37"          # reports/plan-latest.md + gems-latest.md/.csv
   plan_message_at: "06:47"     # Telegram: today's plan
+  export_at: "06:52"           # production pack -> N8N_WEBHOOK_URL + reports/pack-latest.json
   midday_wiki_at: "16:17"      # cheap refresh for late-published days
   backup_note: "backups run from host cron (scripts/backup.sh)"
   every:

@@ -7,6 +7,7 @@
     ode gems [--market de-DE] [--format md|csv|table] [--limit 30]
     ode plan [--format md|table|json]   # what to do NOW: platform + language + steps
     ode briefs                     # Gemini titles/outline for today's top actions
+    ode export [--send]            # production pack JSON (stdout) / POST to N8N_WEBHOOK_URL
     ode scheduler                  # ALWAYS-ON: runs every job on its schedule, forever
     ode realtime hourly|trends|breakout|plan   # run one realtime job now
     ode done <id> [--status started|published|dropped] [--hours 3] [--note ...]
@@ -129,6 +130,26 @@ async def _plan(fmt: str, as_of: date | None) -> int:
         return 0
     finally:
         await db.close()
+
+
+async def _export(send: bool) -> int:
+    import json
+
+    from ode import export
+
+    config, secrets = load_config(), get_secrets()
+
+    async def run(db: Database) -> int:
+        if send:
+            from ode.pipeline import http_client
+            async with http_client(config) as client:
+                r = await export.export_job(config, secrets, db, client)
+            print("  " + "  ".join(f"{k}={v}" for k, v in r.items()))
+            return 1 if r["status"] == "error" else 0
+        pack = await export.make_pack(db, config, datetime.now(UTC).date())
+        print(json.dumps(pack, ensure_ascii=False, default=str, indent=2))
+        return 0 if pack["items"] else 1
+    return await _with_db(run)
 
 
 async def _briefs() -> int:
@@ -393,6 +414,9 @@ def main(argv: list[str] | None = None) -> int:
     pl.add_argument("--format", choices=["table", "md", "json"], default="table")
     pl.add_argument("--as-of", type=date.fromisoformat)
     sub.add_parser("briefs", help="Gemini briefs for today's top actions (GEMINI_API_KEY)")
+    ex = sub.add_parser("export", help="production pack JSON for n8n / automation")
+    ex.add_argument("--send", action="store_true",
+                    help="POST to N8N_WEBHOOK_URL (once per day) + write reports/pack-latest.json")
     sub.add_parser("scheduler", help="always-on: run every job on its schedule, forever")
     rt = sub.add_parser("realtime", help="run one realtime job now")
     rt.add_argument("job", choices=["hourly", "trends", "breakout", "plan"])
@@ -424,6 +448,7 @@ def main(argv: list[str] | None = None) -> int:
         "score": lambda: _score(args.as_of, args.market),
         "plan": lambda: _plan(args.format, args.as_of),
         "briefs": _briefs,
+        "export": lambda: _export(args.send),
         "scheduler": _scheduler,
         "realtime": lambda: _realtime(args.job),
         "alerts": lambda: _alerts(args.limit),
