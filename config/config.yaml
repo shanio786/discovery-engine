@@ -238,6 +238,7 @@ gemini:
 # Platform recommendations (`ode plan`): which format to build for a topic.
 actions:
   top_n: 25                     # actions listed in the plan
+  rank_by: dollars              # dollars (expected $/month) | dollars_per_hour | score
   per_market_max: 5             # spread the plan over markets
   per_topic_max: 3              # e.g. Shorts + YouTube + Blog for one breakout
   also_in_max: 6                # "same action, other open languages" listed per item
@@ -279,6 +280,22 @@ miners:
     max_subs: 200000           # small/medium channels only (a format, not a celebrity)
     within_days: 365
     max_formulas: 5            # Gemini one-line format formula per run (GEMINI_API_KEY)
+
+# Dollar estimate per plan item ($/month at maturity, 3-6 months). Rough public
+# ranges; once you log >= 2 monetized results on a platform, YOUR numbers take over
+# gradually. Uncertain factors are (low, high) and combine in log space.
+dollars:
+  search_per_wiki_view: [1.0, 4.0]    # Google searches per Wikipedia view (no DataForSEO)
+  longtail_factor: [1.5, 4.0]         # long-tail searches per head-term search
+  youtube_search_share: [0.3, 1.0]    # YouTube searches relative to Google
+  youtube_browse_factor: [1.5, 4.0]   # total YouTube views per search view
+  cross_language_demand: [0.15, 0.6]  # demand in a language with no article yet
+  capture: {BLOG: [0.02, 0.10], YOUTUBE: [0.01, 0.06], TOOLSITE: [0.02, 0.12],
+            APP: [0.002, 0.01]}       # share of the demand you win at maturity
+  rpm_usd: {BLOG: 10.0, YOUTUBE: 3.0, SHORTS: 0.06, TOOLSITE: 8.0, APP: 50.0}  # x market_value
+  shorts_views_per_short: [500, 8000]
+  shorts_per_month: 30
+  effort_hours: {BLOG: 12, YOUTUBE: 8, SHORTS: 5, TOOLSITE: 10, APP: 25}   # with AI
 
 # DataForSEO verify layer (paid; needs DATAFORSEO_LOGIN / _PASSWORD). Real Google
 # search volume, keyword difficulty and the top 10 for the best blog / tool items.

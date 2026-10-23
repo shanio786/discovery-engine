@@ -196,7 +196,9 @@ async def plan_message_job(config: Config, secrets: Secrets, db: Database, clien
         also = (" · also: " + ", ".join(LANGUAGE_NAME.get(lg, lg) for lg, _ in a.also_in[:4])
                 if a.also_in else "")
         lines.append(f"\n<b>{i}. {html_escape(PLATFORM_LABEL[a.platform])} · {lang}</b>\n"
-                     f"{html_escape(a.topic)} — score {a.score:.0f}, ease {a.ease:.0f}{also}\n"
+                     f"{html_escape(a.topic)} — "
+                     + (f"💵 {a.dollars.label()}, " if a.dollars and a.dollars.high else "")
+                     + f"ease {a.ease:.0f}{also}\n"
                      f"↳ {html_escape(a.why[0] if a.why else '')}")
     lines.append("\nPoori list + steps: reports/plan-latest.md")
     notifier = Notifier(config, secrets, client, db)

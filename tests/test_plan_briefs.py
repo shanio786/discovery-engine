@@ -64,7 +64,12 @@ async def test_plan_end_to_end(db):
     await Scorer(config, db).run(AS_OF)
     plan = await planmod.build_plan(db, config, AS_OF)
     assert plan, "expected actions"
-    assert plan[0].topic == "Heat pump" and plan[0].market == "en-US"
+    mids = [a.dollars.mid for a in plan]
+    assert mids == sorted(mids, reverse=True)                      # ranked by expected $
+    assert all(a.dollars.low <= a.dollars.high for a in plan)
+    by_score = await planmod.build_plan(db, make_config(**{**config.raw(), "actions": {
+        **config.actions, "rank_by": "score"}}), AS_OF, save=False)
+    assert by_score[0].topic == "Heat pump" and by_score[0].market == "en-US"
     assert all(a.topic not in ("Old fad", "Brand new thing") for a in plan)  # declining/unknown
     # en says "no German article", but de-DE has its own measured score for the same topic:
     # the measured native item wins over the "be first" guess, and never both

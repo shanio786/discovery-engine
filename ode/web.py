@@ -210,7 +210,10 @@ def _card(request: Request, i: int | None, a: Action, link: bool = True) -> str:
     num = f"{i}. " if i is not None else ""
     return (f'<div class="card"><h2>{num}{ICON.get(a.platform, "")} {e(PLATFORM_LABEL[a.platform])}'
             f" · {e(lang)}</h2><div><b>{e(a.topic)}</b></div>"
-            f'<div class="mut">score {a.score:.0f} · aasani {a.ease:.0f} · value {a.value:.0f} · '
+            + (f'<div class="ok">💵 Andazan {e(a.dollars.label())} · ~{a.dollars.hours:.0f} '
+               f'ghante <span class="mut">({e(a.dollars.basis)})</span></div>'
+               if a.dollars and a.dollars.high else "")
+            + f'<div class="mut">score {a.score:.0f} · aasani {a.ease:.0f} · value {a.value:.0f} · '
             f"{e(a.market)}{src} · id <code>{e(a.action_id)}</code></div>"
             f"<ul>{''.join(f'<li>{e(w)}</li>' for w in a.why[:3])}</ul>"
             + (f'<div class="mut">Yahan bhi khula: {also}</div>' if also else "")

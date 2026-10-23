@@ -18,6 +18,7 @@ from ode.scoring.actions import (
     plan_topic,
     select_plan,
 )
+from ode.scoring.dollars import _nice, estimate, personal_stats
 from ode.scoring.report import UNVALIDATED
 
 
@@ -81,12 +82,17 @@ async def build_plan(db: Database, config: Config, as_of: date, *,
         lang_market.setdefault(m.language, m.code)
     min_conf = float(cfg.get("min_confidence", 0.0))
     done = await worklog.logged_ids(db)
+    personal = personal_stats(await worklog.entries(db, 1000))
+    tut = float(config.monetization.get("tutorial_ads_multiplier", 1.5))
     actions: list[Action] = []
     for v in views:
         if v.confidence < min_conf:
             continue
         v.market_value = values.get(v.market, v.market_value)
-        actions += plan_topic(v, config=cfg, market_values=values, language_markets=lang_market)
+        for a in plan_topic(v, config=cfg, market_values=values, language_markets=lang_market):
+            a.dollars = estimate(a, v, market_value=values.get(a.market, 0.5),
+                                 tutorial_mult=tut, personal=personal, cfg=config.dollars)
+            actions.append(a)
     # a "be first in language X" guess is moot where X already has its own measured score
     native = {(v.topic_id, v.market) for v in views}
     actions = [a for a in actions
@@ -97,7 +103,8 @@ async def build_plan(db: Database, config: Config, as_of: date, *,
     open_actions = [a for a in actions if a.action_id not in done]
     plan = select_plan(open_actions, top_n=int(cfg.get("top_n", 25)),
                        per_market_max=int(cfg.get("per_market_max", 4)),
-                       per_topic_max=int(cfg.get("per_topic_max", 3)))
+                       per_topic_max=int(cfg.get("per_topic_max", 3)),
+                       rank_by=str(cfg.get("rank_by", "dollars")))
     attach_also_in(plan, open_actions, int(cfg.get("also_in_max", 6)))
     await attach_research(db, plan)
     if save:
@@ -133,7 +140,11 @@ def render_plan_markdown(plan: list[Action], as_of: date,
     if not plan:
         out.append("_Abhi koi action nahi — pehle `ode daily` chalao (60 din ki history chahiye)._")
     for i, a in enumerate(plan, 1):
-        out += [f"## {i}. {a.headline}", "",
+        money: tuple[str, ...] = ()
+        if a.dollars and a.dollars.high:
+            money = ((f"**💵 Andazan {a.dollars.label()}** (3–6 mahine baad · "
+                      f"{a.dollars.basis}) · ~{a.dollars.hours:.0f} ghante setup"), "")
+        out += [f"## {i}. {a.headline}", "", *money,
                 f"**Score {a.score:.0f}** · aasani (ease) {a.ease:.0f}/100 · "
                 f"value {a.value:.0f}/100 · market `{a.market}` · id `{a.action_id}`"
                 + (f" · demand `{a.source_market}` se saabit" if a.source_market else ""), "",
@@ -181,11 +192,12 @@ def _research_md(a: Action) -> list[str]:
 
 
 def render_plan_table(plan: list[Action]) -> str:
-    lines = [(f"{'#':>3} {'id':8} {'score':>6} {'ease':>4} {'value':>5}  {'platform':8} "
+    lines = [(f"{'#':>3} {'id':8} {'score':>6} {'ease':>4} {'$/month':>13}  {'platform':8} "
               f"{'mkt':6} topic")]
     for i, a in enumerate(plan, 1):
         src = f"  (demand from {a.source_market})" if a.source_market else ""
-        lines.append(f"{i:>3} {a.action_id:8} {a.score:>6.0f} {a.ease:>4.0f} {a.value:>5.0f}  "
+        money = (f"{_nice(a.dollars.low)}-{_nice(a.dollars.high)}" if a.dollars else "-")
+        lines.append(f"{i:>3} {a.action_id:8} {a.score:>6.0f} {a.ease:>4.0f} {money:>13}  "
                      f"{a.platform:8} {a.market:6} {a.topic}{src}")
         lines.append(f"      ↳ {a.why[0] if a.why else ''}")
         if a.also_in:
@@ -194,4 +206,9 @@ def render_plan_table(plan: list[Action]) -> str:
 
 
 def plan_as_dicts(plan: list[Action]) -> list[dict[str, Any]]:
-    return [a.__dict__ | {"action_id": a.action_id, "headline": a.headline} for a in plan]
+    def money(a: Action) -> dict[str, Any] | None:
+        d = a.dollars
+        return None if d is None else {"low": d.low, "high": d.high, "mid": round(d.mid, 2),
+                                       "hours": d.hours, "basis": d.basis}
+    return [a.__dict__ | {"action_id": a.action_id, "headline": a.headline, "dollars": money(a)}
+            for a in plan]

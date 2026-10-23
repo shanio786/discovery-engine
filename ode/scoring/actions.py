@@ -100,6 +100,7 @@ class Action:
     questions: list[str] = field(default_factory=list)    # Google Autocomplete long-tail
     complaints: list[str] = field(default_factory=list)   # 1-star reviews of top apps
     formats: list[dict[str, Any]] = field(default_factory=list)  # proven viral formats
+    dollars: Any = None            # scoring.dollars.Dollars: $/month range + hours
 
     @property
     def action_id(self) -> str:
@@ -370,15 +371,28 @@ def attach_also_in(plan: list[Action], candidates: list[Action], max_n: int = 6)
         a.also_in = list(best.items())[:max_n]
 
 
+def rank_key(rank_by: str = "score"):
+    """Sort key for the plan: `score` (opportunity), `dollars` (expected $/month
+    x score as tie-break) or `dollars_per_hour`."""
+    def key(a: Action) -> tuple[float, float]:
+        d = a.dollars
+        if rank_by == "dollars" and d is not None:
+            return (d.mid, a.score)
+        if rank_by == "dollars_per_hour" and d is not None:
+            return (d.per_hour, a.score)
+        return (a.score, 0.0)
+    return key
+
+
 def select_plan(actions: list[Action], *, top_n: int = 25, per_market_max: int = 4,
-                per_topic_max: int = 2) -> list[Action]:
+                per_topic_max: int = 2, rank_by: str = "score") -> list[Action]:
     """Best actions first, spread over markets and topics so the plan is a
     portfolio, not 25 variations of one idea."""
     out: list[Action] = []
     per_market: dict[str, int] = {}
     per_topic: dict[tuple[str, str], int] = {}
     seen: set[tuple[str, str, str] | str] = set()
-    for a in sorted(actions, key=lambda a: a.score, reverse=True):
+    for a in sorted(actions, key=rank_key(rank_by), reverse=True):
         if a.action_id in seen:  # same topic+market+platform reached two ways
             continue
         seen.add(a.action_id)
