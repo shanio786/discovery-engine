@@ -187,6 +187,13 @@ async def _guarded_step(name: str, coro) -> dict:
         return {"status": "error", "error": str(exc)[:200]}
 
 
+async def _clusters(db: Database, config: Config, secrets: Secrets) -> dict:
+    from ode.clusters import cluster_job
+
+    async with http_client(config) as client:
+        return await cluster_job(db, config, secrets, client)
+
+
 async def _seo(db: Database, config: Config, secrets: Secrets) -> dict:
     from ode.dataforseo import run_verify
 
@@ -233,10 +240,11 @@ async def daily(config: Config, secrets: Secrets) -> dict:
                 coll = await _collect(db, config, secrets, client, None, None)
             today = datetime.now(UTC).date()
             scored = await Scorer(config, db).run(today)
+            niches = await _guarded_step("clusters", _clusters(db, config, secrets))
             mined = await _miners(db, config, secrets)
             seo = await _guarded_step("dataforseo", _seo(db, config, secrets))
             briefs = await _briefs(db, config, secrets, today)
-        return {"discovery": disc, "collect": coll, "scoring": scored, "miners": mined,
-                "dataforseo": seo, "briefs": briefs}
+        return {"discovery": disc, "collect": coll, "scoring": scored, "niches": niches,
+                "miners": mined, "dataforseo": seo, "briefs": briefs}
     finally:
         await db.close()

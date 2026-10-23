@@ -175,7 +175,7 @@ def client_ip(request: Request, trust_proxy: bool) -> str:
 
 # ---------------------------------------------------------------- rendering
 NAV = [("/", "Aaj ka plan"), ("/week", "Hafta"), ("/content", "Mera content"), ("/worklog", "Mera kaam"),
-       ("/gems", "Gems"), ("/alerts", "Alerts")]
+       ("/niches", "Niches"), ("/gems", "Gems"), ("/alerts", "Alerts")]
 
 
 def page(title: str, body: str, path: str = "/") -> HTMLResponse:
@@ -512,6 +512,21 @@ async def worklog_page(request: Request) -> HTMLResponse:
     return page("Mera kaam", "".join(body), "/worklog")
 
 
+async def niches_page(request: Request) -> HTMLResponse:
+    from ode.clusters import load_niches
+
+    niches = await load_niches(request.app.state.db, 30)
+    cards = [f'<div class="card"><h2>{i}. {e(n["label"])}</h2>'
+             f'<div class="mut">{n["size"]} topics · {n.get("views_per_day", 0):,} views/din · '
+             f'{n.get("growing_share", 0):.0%} barh rahe · best: '
+             f'{e(", ".join(n.get("best_markets", [])))}</div>'
+             f'<p>{e(", ".join(m["name"] for m in n.get("members", [])[:15]))}</p></div>'
+             for i, n in enumerate(niches, 1)]
+    return page("Niches", "<h1>Niches (ek channel / site = poora niche)</h1>" + (
+        "".join(cards) or '<div class="card">Abhi niches nahi — EMBEDDINGS_URL (RunPod) ya '
+        "GEMINI_API_KEY chahiye.</div>"), "/niches")
+
+
 async def gems_page(request: Request) -> HTMLResponse:
     from ode.scoring.report import load_gems
 
@@ -562,7 +577,7 @@ def create_app(config: Config, secrets: Secrets, db: Database | None = None) -> 
                 Route("/content", content_page), Route("/week", week_page),
                 Route("/hours", set_hours, methods=["POST"]), Route("/track", track, methods=["POST"]),
                 Route("/untrack", untrack_view, methods=["POST"]),
-                Route("/gems", gems_page), Route("/alerts", alerts_page), Route("/health", health)],
+                Route("/gems", gems_page), Route("/niches", niches_page), Route("/alerts", alerts_page), Route("/health", health)],
         middleware=[Middleware(Guard)], lifespan=lifespan)
     app.state.config = config
     app.state.password = secrets.dashboard_password or ""

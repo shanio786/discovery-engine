@@ -7,6 +7,7 @@
     ode gems [--market de-DE] [--format md|csv|table] [--limit 30]
     ode plan [--format md|table|json]   # what to do NOW: platform + language + steps
     ode briefs                     # Gemini titles/outline for today's top actions
+    ode niches [--refresh]         # related topics grouped: one channel / site per niche
     ode seo                        # DataForSEO: real Google volume / difficulty (top 20, budget)
     ode mine                       # long-tail questions, 1-star reviews, viral formats now
     ode backtest                   # did past top-20s really grow? learns composite weights
@@ -108,8 +109,9 @@ async def _daily() -> int:
     rc = max(rc, _print_results(out["collect"]))
     print("scoring:")
     rc = max(rc, _print_scoring(out["scoring"]))
-    seo = out.get("dataforseo") or {}
-    print("dataforseo:\n  " + "  ".join(f"{k}={v}" for k, v in seo.items()))
+    for step in ("niches", "dataforseo"):
+        r = out.get(step) or {}
+        print(f"{step}:\n  " + "  ".join(f"{k}={v}" for k, v in r.items()))
     print("miners:")
     for name, r in (out.get("miners") or {}).items():
         if isinstance(r, dict):
@@ -165,6 +167,20 @@ async def _step(fn_path: str) -> int:
     r = await run_with_db(config, secrets, run)
     print("  " + "  ".join(f"{k}={v}" for k, v in r.items()))
     return 1 if r.get("status") == "error" else 0
+
+
+async def _niches(refresh: bool, limit: int) -> int:
+    from ode import clusters
+
+    if refresh:
+        rc = await _step("ode.clusters:cluster_job")
+        if rc:
+            return rc
+
+    async def run(db: Database) -> int:
+        print(clusters.render_niches(await clusters.load_niches(db, limit)))
+        return 0
+    return await _with_db(run)
 
 
 async def _mine() -> int:
@@ -559,6 +575,9 @@ def main(argv: list[str] | None = None) -> int:
     pl.add_argument("--format", choices=["table", "md", "json"], default="table")
     pl.add_argument("--as-of", type=date.fromisoformat)
     sub.add_parser("briefs", help="Gemini briefs for today's top actions (GEMINI_API_KEY)")
+    ni = sub.add_parser("niches", help="related topics grouped into channel / site niches")
+    ni.add_argument("--refresh", action="store_true", help="re-embed + re-cluster now")
+    ni.add_argument("--limit", type=int, default=20)
     sub.add_parser("seo", help="DataForSEO: Google volume / difficulty / SERP for top items")
     sub.add_parser("mine", help="questions, 1-star reviews, viral formats for today's plan")
     sub.add_parser("backtest", help="precision@k of past rankings vs random; learn weights")
@@ -616,6 +635,7 @@ def main(argv: list[str] | None = None) -> int:
         "backtest": _backtest,
         "mine": _mine,
         "seo": lambda: _step("ode.dataforseo:run_verify"),
+        "niches": lambda: _niches(args.refresh, args.limit),
         "scheduler": _scheduler,
         "realtime": lambda: _realtime(args.job),
         "alerts": lambda: _alerts(args.limit),

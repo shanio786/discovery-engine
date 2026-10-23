@@ -53,6 +53,8 @@ class Secrets(BaseSettings):
     n8n_webhook_url: str | None = None
     n8n_webhook_secret: str | None = None
     dashboard_password: str | None = None
+    embeddings_url: str | None = None      # OpenAI-compatible /embeddings (e.g. RunPod)
+    embeddings_api_key: str | None = None
 
 
 class Config:
@@ -236,6 +238,10 @@ class Config:
     @property
     def actions(self) -> dict[str, Any]:
         return dict(self._d.get("actions") or {})
+
+    @property
+    def clusters(self) -> dict[str, Any]:
+        return dict(self._d.get("clusters") or {})
 
     @property
     def portfolio(self) -> dict[str, Any]:

@@ -70,6 +70,8 @@ class TopicView:
     competing_videos: float | None = None
     competing_shorts: float | None = None   # short videos (< 4 min) in the same window
     google: Mapping[str, float] = field(default_factory=dict)  # DataForSEO: gsv, kd, serp_weak_share
+    niche: str | None = None       # niche (cluster) label
+    niche_size: int = 0
     outlier: float | None = None
     unanswered: float | None = None
     missing_in: list[str] = field(default_factory=list)
@@ -246,8 +248,11 @@ def plan_topic(t: TopicView, *, config: Mapping[str, Any] | None = None,
     season_line = (f"📅 SEASONAL — har saal {t.seasonal['month_name']} mein "
                    f"~{t.seasonal['ratio']:.1f}x demand; peak {t.seasonal['weeks']} hafte mein. "
                    "AI content ABHI banao taake peak tak rank ho jaye") if t.seasonal else ""
-    base_why = [x for x in (season_line, _phase_line(t) if not t.seasonal else "", _views(t))
-                if x]
+    niche_line = (f"📦 niche “{t.niche}”: {t.niche_size} related topics = ek channel / site, "
+                  f"{t.niche_size}+ videos / articles ka material"
+                  if t.niche and t.niche_size >= 3 else "")
+    base_why = [x for x in (season_line, _phase_line(t) if not t.seasonal else "", _views(t),
+                            niche_line) if x]
     no_yt = [] if sd is not None or t.outlier is not None else [
         "YouTube competition abhi naapi nahi gayi (kal ka probe batayega)"]
     ps = t.playstore or {}

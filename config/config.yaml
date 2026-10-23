@@ -281,6 +281,20 @@ miners:
     within_days: 365
     max_formulas: 5            # Gemini one-line format formula per run (GEMINI_API_KEY)
 
+# Niches (`ode niches`, dashboard "Niches"): related topics grouped into one
+# channel / site idea. Embeddings from EMBEDDINGS_URL (+ _API_KEY): any
+# OpenAI-compatible /embeddings endpoint, e.g. a RunPod serverless
+# worker-infinity-embedding; else Gemini (GEMINI_API_KEY).
+clusters:
+  enabled: true
+  model: BAAI/bge-m3           # model name your endpoint serves (multilingual)
+  gemini_fallback: true
+  gemini_model: gemini-embedding-001
+  threshold: 0.80              # cosine to join a niche (model-dependent: lower = bigger niches)
+  min_size: 3                  # topics needed to call it a niche
+  batch_size: 50
+  max_names_per_run: 10        # short Gemini names for new niches
+
 # Weekly plan (`ode week`, dashboard "Hafta", Monday Telegram). Hours can also be
 # set from the dashboard (stored in the DB, overrides this).
 portfolio:
@@ -435,7 +449,8 @@ rate_limits:
   telegram:   {rate: 1.0,  burst: 3}
   trends:     {rate: 0.5,  burst: 1}
   autocomplete: {rate: 1.0, burst: 2}
-  dataforseo: {rate: 2.0, burst: 2}   # Google suggest: polite (use HTTPS_PROXY if blocked)
+  dataforseo: {rate: 2.0, burst: 2}
+  embeddings: {rate: 2.0, burst: 2}   # Google suggest: polite (use HTTPS_PROXY if blocked)
   dumps:      {rate: 1.0,  burst: 1}
   hackernews: {rate: 5.0,  burst: 10}
 

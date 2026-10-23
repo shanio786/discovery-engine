@@ -108,6 +108,7 @@ async def test_plan_done_result_flow(db, monkeypatch):
         assert bad.status_code == 400
         assert (await c.get("/item/zzzz")).status_code == 200
         assert (await c.get("/gems")).status_code == 200
+        assert "Abhi niches nahi" in (await c.get("/niches")).text
         assert (await c.get("/alerts")).status_code == 200
 
 

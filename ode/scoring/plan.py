@@ -40,6 +40,10 @@ async def load_views(db: Database, config: Config, as_of: date) -> list[TopicVie
         """,
         as_of, as_of - timedelta(days=30),
     )
+    niche_rows = await db.pool.fetch(
+        "SELECT t.id, c.label, c.size FROM topics t JOIN clusters c ON c.id = t.cluster_id "
+        "WHERE t.id = ANY($1)", list({r["topic_id"] for r in rows}))
+    niches = {r["id"]: (r["label"], r["size"]) for r in niche_rows}
     ps: dict[tuple[int, str], dict[str, float]] = defaultdict(dict)
     for r in ps_rows:
         ps[(r["topic_id"], r["market"])][r["metric_name"]] = r["value"]
@@ -62,6 +66,8 @@ async def load_views(db: Database, config: Config, as_of: date) -> list[TopicVie
             playstore=ps.get((r["topic_id"], r["market"]), {}), topic_id=r["topic_id"],
             tutorial=bool(d.get("tutorial")), tool_keyword=d.get("tool_keyword"),
             seasonal=d.get("seasonal"),
+            niche=niches.get(r["topic_id"], (None, 0))[0],
+            niche_size=niches.get(r["topic_id"], (None, 0))[1],
         ))
     return views
 
