@@ -1,7 +1,7 @@
 """Scoring end to end on a real TimescaleDB: phases, components, persistence,
 no lookahead, probe queue, and the gems report."""
 
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import numpy as np
 
@@ -149,6 +149,6 @@ async def test_probe_requeue_only_after_refresh(db):
     await scorer.run(AS_OF)            # just probed: not re-queued
     assert "wd:Q1" not in {p.topic_key for p in await state.pending_probes("en-US", 10)}
     await db.pool.execute("UPDATE probe_queue SET probed_at = $1 WHERE topic_key = 'wd:Q1'",
-                          datetime(2020, 1, 1))
+                          datetime(2020, 1, 1, tzinfo=UTC))
     await scorer.run(AS_OF)            # long ago: re-queued
     assert "wd:Q1" in {p.topic_key for p in await state.pending_probes("en-US", 10)}

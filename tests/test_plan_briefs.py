@@ -66,9 +66,11 @@ async def test_plan_end_to_end(db):
     assert plan, "expected actions"
     assert plan[0].topic == "Heat pump" and plan[0].market == "en-US"
     assert all(a.topic not in ("Old fad", "Brand new thing") for a in plan)  # declining/unknown
-    cross = [a for a in plan if a.source_market]
-    assert any(a.topic == "Gadget tracker" and a.market == "de-DE" and a.language == "de"
-               for a in cross)                                   # proven in en, missing in de
+    # en says "no German article", but de-DE has its own measured score for the same topic:
+    # the measured native item wins over the "be first" guess, and never both
+    assert not [a for a in plan if a.source_market and a.topic == "Gadget tracker"]
+    assert any(a.topic == "Gadget-Tracker" and a.market == "de-DE" for a in plan)
+    assert len({a.action_id for a in plan}) == len(plan)
     assert any(a.platform == "APP" and a.topic == "Gadget tracker" for a in plan)
     md = planmod.render_plan_markdown(plan, AS_OF)
     assert md.startswith(f"# Aaj kya karna hai — {AS_OF}") and "**Pehle steps:**" in md

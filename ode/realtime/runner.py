@@ -5,7 +5,7 @@ never raises (the scheduler must keep running)."""
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from ode.collectors.base import make_fetcher
@@ -233,7 +233,7 @@ async def reports_job(config: Config, secrets: Secrets, db: Database, client) ->
     cutoff = today - timedelta(days=60)
     for f in out_dir.glob("*-20*"):
         try:
-            if datetime.strptime(f.stem.split("-", 1)[1][:10], "%Y-%m-%d").date() < cutoff:
+            if date.fromisoformat(f.stem.split("-", 1)[1][:10]) < cutoff:
                 f.unlink()
         except ValueError:
             continue

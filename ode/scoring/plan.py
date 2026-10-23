@@ -63,23 +63,43 @@ async def load_views(db: Database, config: Config, as_of: date) -> list[TopicVie
     return views
 
 
-async def build_plan(db: Database, config: Config, as_of: date) -> list[Action]:
+async def build_plan(db: Database, config: Config, as_of: date, *,
+                     save: bool = True) -> list[Action]:
+    """Today's plan. Items you already started / published / dropped are left
+    out; market values and platform weights are calibrated from your results;
+    shown items are saved so their ids stay resolvable."""
+    from ode import worklog
+    from ode.research import attach_research
+
     cfg = config.actions
     views = await load_views(db, config, as_of)
-    values = {m: config.market_value(m) for m in config.market_codes}
+    values, platform_mult = await worklog.calibration(db, config)
     lang_market: dict[str, str] = {}
     for m in config.markets():  # first configured market per language
         lang_market.setdefault(m.language, m.code)
     min_conf = float(cfg.get("min_confidence", 0.0))
+    done = await worklog.logged_ids(db)
     actions: list[Action] = []
     for v in views:
         if v.confidence < min_conf:
             continue
+        v.market_value = values.get(v.market, v.market_value)
         actions += plan_topic(v, config=cfg, market_values=values, language_markets=lang_market)
-    plan = select_plan(actions, top_n=int(cfg.get("top_n", 25)),
+    # a "be first in language X" guess is moot where X already has its own measured score
+    native = {(v.topic_id, v.market) for v in views}
+    actions = [a for a in actions
+               if not (a.source_market and (a.topic_id, a.market) in native)]
+    for a in actions:
+        if a.platform in platform_mult:
+            a.score = round(a.score * platform_mult[a.platform], 2)
+    open_actions = [a for a in actions if a.action_id not in done]
+    plan = select_plan(open_actions, top_n=int(cfg.get("top_n", 25)),
                        per_market_max=int(cfg.get("per_market_max", 4)),
                        per_topic_max=int(cfg.get("per_topic_max", 3)))
-    attach_also_in(plan, actions, int(cfg.get("also_in_max", 6)))
+    attach_also_in(plan, open_actions, int(cfg.get("also_in_max", 6)))
+    await attach_research(db, plan)
+    if save:
+        await worklog.save_plan_items(db, as_of, plan)
     return plan
 
 
@@ -112,7 +132,7 @@ def render_plan_markdown(plan: list[Action], as_of: date,
     for i, a in enumerate(plan, 1):
         out += [f"## {i}. {a.headline}", "",
                 f"**Score {a.score:.0f}** · aasani (ease) {a.ease:.0f}/100 · "
-                f"value {a.value:.0f}/100 · market `{a.market}`"
+                f"value {a.value:.0f}/100 · market `{a.market}` · id `{a.action_id}`"
                 + (f" · demand `{a.source_market}` se saabit" if a.source_market else ""), "",
                 "**Kyun:**"]
         out += [f"- {w}" for w in a.why]
@@ -121,6 +141,7 @@ def render_plan_markdown(plan: list[Action], as_of: date,
             out += ["", f"**AI se in languages mein bhi copy karo (yahan bhi khula hai):** {langs}"]
         out += ["", "**Pehle steps:**"]
         out += [f"{n}. {s}" for n, s in enumerate(a.steps, 1)]
+        out += _research_md(a)
         b = briefs.get(i - 1)
         if b:
             out += ["", "**Title ideas (Gemini):**"] + [f"- {t}" for t in b["titles"][:10]]
@@ -129,18 +150,40 @@ def render_plan_markdown(plan: list[Action], as_of: date,
         if a.unverified:
             out += ["", "_Abhi verify nahi hua: " + "; ".join(a.unverified) + "_"]
         out.append("")
-    out += ["---", "_Platforms: " + " · ".join(PLATFORM_LABEL.values()) + ". Sab kuch AI aur "
+    out += ["---", ("_Kaam shuru kiya? `ode done <id>` · kamai aayi? "
+            "`ode result <id> --views N --revenue USD` — engine tumhare results se seekhta hai "
+            "aur woh item dobara nahi dikhata._"), "", "_Platforms: " + " · ".join(PLATFORM_LABEL.values()) + ". Sab kuch AI aur "
             "automation se banta hai. Affiliate, SaaS aur product selling jaan boojh kar shamil "
             "nahi._"]
     return "\n".join(out) + "\n"
 
 
+def _research_md(a: Action) -> list[str]:
+    out: list[str] = []
+    if a.questions:
+        out += ["", "**Log yeh sawal poochh rahe hain (har sawal = ek article / video):**"]
+        out += [f"- {q}" for q in a.questions]
+    if a.complaints:
+        out += ["", "**Top apps ki 1-star shikayatein (yehi tumhari feature list hai):**"]
+        out += [f"- “{c[:220]}”" for c in a.complaints]
+    if a.formats:
+        out += ["", "**Saabit viral format (chhote channels jo baar baar chalte hain):**"]
+        for f in a.formats:
+            mult = f" · avg {f['avg_multiple']:.0f}x subs" if f.get("avg_multiple") else ""
+            out.append(f"- {f['channel']}: {f['outliers']} hit videos{mult}")
+            if f.get("formula"):
+                out.append(f"  - formula: {f['formula']}")
+            out += [f"  - “{t}”" for t in f["titles"][:3]]
+    return out
+
+
 def render_plan_table(plan: list[Action]) -> str:
-    lines = [f"{'#':>3} {'score':>6} {'ease':>4} {'value':>5}  {'platform':8} {'mkt':6} topic"]
+    lines = [(f"{'#':>3} {'id':8} {'score':>6} {'ease':>4} {'value':>5}  {'platform':8} "
+              f"{'mkt':6} topic")]
     for i, a in enumerate(plan, 1):
         src = f"  (demand from {a.source_market})" if a.source_market else ""
-        lines.append(f"{i:>3} {a.score:>6.0f} {a.ease:>4.0f} {a.value:>5.0f}  {a.platform:8} "
-                     f"{a.market:6} {a.topic}{src}")
+        lines.append(f"{i:>3} {a.action_id:8} {a.score:>6.0f} {a.ease:>4.0f} {a.value:>5.0f}  "
+                     f"{a.platform:8} {a.market:6} {a.topic}{src}")
         lines.append(f"      ↳ {a.why[0] if a.why else ''}")
         if a.also_in:
             lines.append("      ↳ also open in: " + ", ".join(lg for lg, _ in a.also_in))
@@ -148,4 +191,4 @@ def render_plan_table(plan: list[Action]) -> str:
 
 
 def plan_as_dicts(plan: list[Action]) -> list[dict[str, Any]]:
-    return [a.__dict__ | {"headline": a.headline} for a in plan]
+    return [a.__dict__ | {"action_id": a.action_id, "headline": a.headline} for a in plan]

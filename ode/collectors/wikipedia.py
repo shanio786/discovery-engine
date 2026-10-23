@@ -24,7 +24,7 @@ WATCH_KIND = "wiki_article"
 
 def _parse_ts(ts: str) -> date:
     # timestamps look like "2024010100" (YYYYMMDDHH)
-    return datetime.strptime(ts[:8], "%Y%m%d").date()
+    return date(int(ts[:4]), int(ts[4:6]), int(ts[6:8]))
 
 
 def parse_pageviews(

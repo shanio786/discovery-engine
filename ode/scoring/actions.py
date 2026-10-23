@@ -30,6 +30,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
 
+from ode.learning import action_id
+
 PLATFORMS = ("BLOG", "YOUTUBE", "SHORTS", "TOOLSITE", "APP")
 PLATFORM_LABEL = {
     "BLOG": "AI blog / website",
@@ -93,6 +95,14 @@ class Action:
     topic_id: int | None = None
     source_market: str | None = None   # set for cross-language "be first" actions
     also_in: list[tuple[str, float]] = field(default_factory=list)  # (language, ease)
+    questions: list[str] = field(default_factory=list)    # Google Autocomplete long-tail
+    complaints: list[str] = field(default_factory=list)   # 1-star reviews of top apps
+    formats: list[dict[str, Any]] = field(default_factory=list)  # proven viral formats
+
+    @property
+    def action_id(self) -> str:
+        """Stable id: `ode done <id>` / `ode result <id>`."""
+        return action_id(self.topic_id, self.market, self.platform, self.topic)
 
     @property
     def headline(self) -> str:
@@ -331,8 +341,11 @@ def select_plan(actions: list[Action], *, top_n: int = 25, per_market_max: int =
     out: list[Action] = []
     per_market: dict[str, int] = {}
     per_topic: dict[tuple[str, str], int] = {}
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[tuple[str, str, str] | str] = set()
     for a in sorted(actions, key=lambda a: a.score, reverse=True):
+        if a.action_id in seen:  # same topic+market+platform reached two ways
+            continue
+        seen.add(a.action_id)
         key = (a.platform, a.language, a.topic.casefold())
         tkey = (a.market, a.topic.casefold())
         if key in seen or per_market.get(a.market, 0) >= per_market_max \

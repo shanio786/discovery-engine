@@ -244,6 +244,15 @@ actions:
   # at this ratio YouTube ease bottoms out
   saturated_ratio: 100
 
+# Learning from YOUR results (`ode done` / `ode result`). Your real revenue per
+# visitor recalibrates market_value; your revenue per hour per platform
+# re-weights platforms. Priors count as this much evidence, so one lucky
+# video can't swing everything.
+learning:
+  enabled: true
+  pseudo_views: 20000          # the prior market_value counts as 20k views of evidence
+  pseudo_items: 3              # platform weight starts at 1.0 worth 3 results
+
 # ------------------------------------------------------------------
 # Realtime layer (run by `ode scheduler`, also callable one-off).
 # ------------------------------------------------------------------

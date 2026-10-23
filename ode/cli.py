@@ -9,6 +9,9 @@
     ode briefs                     # Gemini titles/outline for today's top actions
     ode scheduler                  # ALWAYS-ON: runs every job on its schedule, forever
     ode realtime hourly|trends|breakout|plan   # run one realtime job now
+    ode done <id> [--status started|published|dropped] [--hours 3] [--note ...]
+    ode result <id> --views 12000 --revenue 14.5   # totals so far: the engine learns
+    ode worklog                    # what you did, what it earned, what was learned
     ode alerts [--limit 20]        # what the engine alerted (or would have)
     ode notify-test                # send a Telegram test message
     ode discover [--market de-DE]  # refresh watchlists only
@@ -174,6 +177,76 @@ async def _alerts(limit: int) -> int:
         await db.close()
 
 
+async def _with_db(fn):
+    db = await Database.connect(get_secrets().database_url)
+    try:
+        await db.init_schema()
+        return await fn(db)
+    finally:
+        await db.close()
+
+
+async def _done(action: str, status: str, hours: float | None, note: str | None) -> int:
+    from ode import worklog
+
+    async def run(db: Database) -> int:
+        try:
+            r = await worklog.mark(db, action, status, hours=hours, note=note)
+        except worklog.UnknownAction as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        print(f"  {r['status']:9} {r['action_id']} {r['platform']} {r['market']} {r['topic']}")
+        return 0
+    return await _with_db(run)
+
+
+async def _result(action: str, views: int | None, revenue: float | None,
+                  hours: float | None) -> int:
+    from ode import worklog
+
+    async def run(db: Database) -> int:
+        try:
+            r = await worklog.record_result(db, action, views=views, revenue=revenue,
+                                            hours=hours)
+        except worklog.UnknownAction as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        print(f"  {r['action_id']} views={r['views']} revenue=${r['revenue_usd'] or 0:,.2f} "
+              f"hours={r['hours']}")
+        return 0
+    return await _with_db(run)
+
+
+async def _worklog(limit: int) -> int:
+    from ode import worklog
+
+    async def run(db: Database) -> int:
+        rows = await worklog.entries(db, limit)
+        if not rows:
+            print("work log empty — after starting a plan item: ode done <id>")
+            return 0
+        total_rev = sum(r["revenue_usd"] or 0 for r in rows)
+        total_h = sum(r["hours"] or 0 for r in rows)
+        for r in rows:
+            rev = f"${r['revenue_usd']:,.2f}" if r["revenue_usd"] is not None else "-"
+            print(f"  {r['action_id']} {r['status']:9} {r['platform']:8} {r['market']:6} "
+                  f"views={r['views'] or '-':>8} rev={rev:>9} h={r['hours'] or '-':>4} "
+                  f"{r['topic']}")
+        print(f"\n  total revenue ${total_rev:,.2f} · {total_h:.0f} hours"
+              + (f" · ${total_rev / total_h:,.2f}/hour" if total_h else ""))
+        config = load_config()
+        values, plat = await worklog.calibration(db, config)
+        changed = {m: v for m, v in values.items() if abs(v - config.market_value(m)) > 1e-9}
+        if changed:
+            print("  learned market values: " + ", ".join(
+                f"{m} {config.market_value(m):.2f}->{v:.2f}" for m, v in sorted(changed.items())))
+        if plat:
+            print("  learned platform weights: " + ", ".join(
+                f"{p} x{v:.2f}" for p, v in sorted(plat.items())))
+        return 0
+    return await _with_db(run)
+
+
 async def _notify_test() -> int:
     from ode.notify import Notifier
     from ode.pipeline import http_client
@@ -323,6 +396,18 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("scheduler", help="always-on: run every job on its schedule, forever")
     rt = sub.add_parser("realtime", help="run one realtime job now")
     rt.add_argument("job", choices=["hourly", "trends", "breakout", "plan"])
+    dn = sub.add_parser("done", help="mark a plan item as started/published/dropped")
+    dn.add_argument("id")
+    dn.add_argument("--status", choices=["started", "published", "dropped"], default="started")
+    dn.add_argument("--hours", type=float)
+    dn.add_argument("--note")
+    rs = sub.add_parser("result", help="log views/revenue so far for a plan item")
+    rs.add_argument("id")
+    rs.add_argument("--views", type=int)
+    rs.add_argument("--revenue", type=float, help="USD earned so far")
+    rs.add_argument("--hours", type=float, help="hours you spent in total")
+    wl = sub.add_parser("worklog", help="your work, results and what was learned")
+    wl.add_argument("--limit", type=int, default=100)
     al = sub.add_parser("alerts", help="recent alerts")
     al.add_argument("--limit", type=int, default=20)
     sub.add_parser("notify-test", help="send a Telegram test message")
@@ -342,6 +427,9 @@ def main(argv: list[str] | None = None) -> int:
         "scheduler": _scheduler,
         "realtime": lambda: _realtime(args.job),
         "alerts": lambda: _alerts(args.limit),
+        "done": lambda: _done(args.id, args.status, args.hours, args.note),
+        "result": lambda: _result(args.id, args.views, args.revenue, args.hours),
+        "worklog": lambda: _worklog(args.limit),
         "notify-test": _notify_test,
         "gems": lambda: _gems(args.market, args.limit, args.format, args.min_confidence,
                               args.include_unknown, args.as_of),

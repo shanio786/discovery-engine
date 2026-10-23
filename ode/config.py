@@ -50,6 +50,8 @@ class Secrets(BaseSettings):
     gemini_api_key: str | None = None
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
+    n8n_webhook_url: str | None = None
+    dashboard_password: str | None = None
 
 
 class Config:
@@ -233,6 +235,26 @@ class Config:
     @property
     def actions(self) -> dict[str, Any]:
         return dict(self._d.get("actions") or {})
+
+    @property
+    def learning(self) -> dict[str, Any]:
+        return dict(self._d.get("learning") or {})
+
+    @property
+    def export(self) -> dict[str, Any]:
+        return dict(self._d.get("export") or {})
+
+    @property
+    def backtest(self) -> dict[str, Any]:
+        return dict(self._d.get("backtest") or {})
+
+    @property
+    def miners(self) -> dict[str, Any]:
+        return dict(self._d.get("miners") or {})
+
+    @property
+    def dashboard(self) -> dict[str, Any]:
+        return dict(self._d.get("dashboard") or {})
 
     def seed_by_key(self, topic_key: str) -> Seed | None:
         return next((s for s in self._seeds if s.topic_key == topic_key), None)
