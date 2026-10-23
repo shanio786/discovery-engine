@@ -73,6 +73,8 @@ async def test_scoring_end_to_end(db):
     reports = await scorer.run(AS_OF)
     assert [r["status"] for r in reports] == ["ok", "ok"]
 
+    import json
+
     en = await by_name(db, "en-US")
     assert en["Heat pump"]["phase"] == "BREAKOUT" and en["Heat pump"]["momentum"] == 3.0
     assert en["Old fad"]["phase"] == "DECLINING"
@@ -82,7 +84,8 @@ async def test_scoring_end_to_end(db):
     assert en["Heat pump"]["composite"] > en["Gadget tracker"]["composite"] > \
         en["Old fad"]["composite"]
     assert en["Gadget tracker"]["money_path"] == "APP"               # 'tracker' keyword
-    assert en["Heat pump"]["money_path"] == "PRODUCT"                # Wikidata class
+    assert en["Heat pump"]["money_path"] == "ADS"                    # no selling path
+    assert json.loads(en["Heat pump"]["details"])["tutorial"] is True  # teachable class
     rpi = en["Raspberry Pi"]
     assert rpi["gap"] is not None and rpi["competition"] is not None
     assert rpi["confidence"] > en["Heat pump"]["confidence"]         # more real data

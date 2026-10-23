@@ -14,17 +14,23 @@ money there?"
 ## What you get every morning: `reports/plan-latest.md`
 
 A ranked list of **what to do now** — platform, language, topic, why, and
-the first steps — across 12 languages:
+the first steps — across 12 languages. Any subject qualifies: everything is
+**produced with AI and automation**, so a niche only needs demand and room.
 
 | Platform | When the engine recommends it |
 |---|---|
-| **Blog / website** | People search for it; few languages cover it; or a topic proven in one language has **no article at all** in another (be first there) |
-| **YouTube** (long tutorials) | Teachable / B2B topic; few competing videos per daily searcher; small channels out-performing their size |
-| **Shorts · TikTok · Reels** | The topic is in BREAKOUT / GROWING — ride the trend early, one video on three apps |
-| **Play Store app** | Utility intent (tracker / calculator / planner …) or the top apps are badly rated / abandoned while installs prove demand |
-| **Digital product** | How-to / professional audience that buys templates, scripts and mini-courses |
+| **AI blog / website** | People search for it; few languages cover it; or a topic proven in one language has **no article at all** in another (be first there) |
+| **YouTube** (faceless AI videos) | Enough demand; few competing videos per daily searcher; small channels out-performing their size; sponsors for B2B topics |
+| **Shorts · TikTok · Reels** | The topic is in BREAKOUT / GROWING — ride the trend early, one AI video on three apps |
+| **AI-built web tool site** | People want to calculate / convert / generate something; free tool + ads |
+| **AI-built Play Store app** | Utility intent (tracker / calculator / planner …) or the top apps are badly rated / abandoned while installs prove demand; AdMob |
 
-No affiliate, no SaaS — by design. Each action shows **ease** (how easy to
+Every item also lists the **other languages where the same topic is open**
+(AI translation makes copying it nearly free). Steps describe the AI pipeline
+(AI script → AI voice → AI visuals, AI articles → AI translation, AI-coded
+tools/apps) and what to automate with n8n.
+
+No affiliate, no SaaS, no product selling — by design (`monetization.enabled_paths`). Each action shows **ease** (how easy to
 rank / go viral there, comparable across languages: competing videos per daily
 searcher), **value** (money path × what a visitor is worth in that market),
 what is still unverified, and optional Gemini title ideas + outline.
@@ -91,7 +97,7 @@ docker compose run --rm app ode gems --market de-DE --min-confidence 0.5
 
 Har gem ke saath **"why"** likha hota hai: kis phase mein hai (🚀 BREAKOUT /
 📈 GROWING / ⛰ PEAKING / ➖ STABLE / 📉 DECLINING), roz kitne log dhoond rahe
-hain, paisa kis raste se (SPONSOR / PRODUCT / APP / ADS), YouTube par kitna
+hain, paisa kis raste se (SPONSOR / APP / ADS), YouTube par kitna
 competition hai, aur kis language mein abhi article hi nahi hai.
 
 - **Score** = momentum × (demand, money, gap, competition ka mean). BREAKOUT 3×, DECLINING 0.3×.
@@ -179,7 +185,7 @@ absorbs its Wikidata entity's history if discovery saw it first).
 |---|---|---|
 | Momentum | ×0.3–×3.0 | Spec phases on velocity (slope/mean) and acceleration (change in slope between halves). Short spikes removed by a trailing median (a rise must hold `spike_persist_days`); both half-slopes come from one quadratic fit on weekly medians, and the curvature must be ≥ 2 standard errors from zero to count — real Wikipedia noise otherwise flips steady growth into BREAKOUT. < 60 days or no demand → UNKNOWN (×1.0). |
 | Demand | 0–100 | Wikipedia 30-day mean, Reddit 90-day posts, HN 90-day stories; each log + rank normalized **within the market**; weights 0.5/0.3/0.2, renormalized over what exists. |
-| Money | 0–100 | Eligible paths (ADS always; PRODUCT/APP by intent keywords incl. German; SPONSOR for `audience: b2b` seeds or professional Wikidata classes); blended revenue per visitor, log-scaled. Comparison/review intent ×0.7. No affiliate path. |
+| Money | 0–100 | Only `enabled_paths` (default SPONSOR / APP / ADS). ADS always, with a higher RPM for how-to / tech intent (multilingual keywords or teachable Wikidata classes); APP by utility keywords; SPONSOR for `audience: b2b` seeds or professional classes. Blended revenue per visitor, log-scaled. Comparison/review intent ×0.7. No affiliate, SaaS or selling. |
 | Gap | 0–100 | Small-channel outlier strength (views/subs), no channel owning > 30% of top videos, share of unanswered Reddit posts. |
 | Competition | 1–100 | YouTube videos published on the topic in the last 180 days, log-normalized within the market. |
 | Composite | | momentum × weighted geometric mean(demand, money, gap, 101 − competition). Missing gap/competition = neutral 50 (lowers confidence, never zeros the score). |

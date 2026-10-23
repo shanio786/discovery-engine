@@ -15,6 +15,7 @@ def view(**kw):
                 "money_paths": {"ADS": "always", "PRODUCT": "keyword 'how to'"}, "gap": None,
                 "competition": None, "confidence": 0.5, "saturation": "UNKNOWN", "mean30": 2000,
                 "change30": 0.3, "market_value": 1.0}
+    base.setdefault("tutorial", True)
     base.update(kw)
     return TopicView(**base)
 
@@ -36,11 +37,27 @@ def test_dying_or_unmeasured_topics_get_no_actions():
     assert plan_topic(view(phase="UNKNOWN")) == []
 
 
-def test_breakout_gets_shorts_youtube_blog_product():
+def test_breakout_gets_shorts_youtube_blog_and_never_selling():
     p = platforms(plan_topic(view()))
-    assert {("SHORTS", "en-US"), ("YOUTUBE", "en-US"), ("BLOG", "en-US"),
-            ("PRODUCT", "en-US")} <= p
-    assert ("APP", "en-US") not in p          # no utility intent, no Play data
+    assert {("SHORTS", "en-US"), ("YOUTUBE", "en-US"), ("BLOG", "en-US")} <= p
+    assert not any(pl in ("PRODUCT", "APP", "TOOLSITE") for pl, _ in p)  # no utility intent
+
+
+def test_tool_intent_gets_an_ai_tool_site():
+    acts = plan_topic(view(name="BMI calculator", tool_keyword="calculator"))
+    tool = next(a for a in acts if a.platform == "TOOLSITE")
+    assert tool.ease == 60 and any("calculator" in w for w in tool.why)
+    assert "Claude Code" in tool.steps[0] and "subscription nahi" in tool.steps[-1]
+
+
+def test_also_in_lists_other_open_languages():
+    from ode.scoring.actions import attach_also_in
+    en = plan_topic(view(topic_id=7))
+    de = plan_topic(view(topic_id=7, market="de-DE", language="de", market_value=0.85))
+    tr = plan_topic(view(topic_id=7, market="tr-TR", language="tr", market_value=0.15))
+    plan = select_plan(en + de + tr, top_n=1)
+    attach_also_in(plan, en + de + tr)
+    assert plan[0].language == "en" and [lg for lg, _ in plan[0].also_in] == ["de", "tr"]
 
 
 def test_stable_topic_gets_no_shorts():
@@ -94,10 +111,14 @@ def test_select_plan_spreads_over_markets_and_topics():
         [a.score for a in plan if a.market == "en-US"], reverse=True)
 
 
-def test_steps_are_concrete_and_never_affiliate():
-    for a in plan_topic(view(missing_in=["de"], money_paths={"ADS": "a", "PRODUCT": "p",
-                                                             "APP": "u"}),
-                        market_values=VALUES, language_markets=LANGS):
+def test_steps_are_ai_produced_and_never_affiliate_saas_or_selling():
+    acts = plan_topic(view(missing_in=["de"], money_paths={"ADS": "a", "APP": "u"},
+                           tool_keyword="converter"),
+                      market_values=VALUES, language_markets=LANGS)
+    assert {a.platform for a in acts} == {"BLOG", "YOUTUBE", "SHORTS", "TOOLSITE", "APP"}
+    for a in acts:
         assert len(a.steps) >= 3
         text = " ".join(a.steps).lower()
-        assert "affiliate" not in text or "affiliate nahi" in text
+        assert "ai" in text
+        for banned in ("affiliate", "gumroad", "payhip", "becho", "course"):
+            assert banned not in text

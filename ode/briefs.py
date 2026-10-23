@@ -36,14 +36,18 @@ Topic: {a.topic}
 Evidence:
 {why}
 
-Rules: monetization must be one of: direct sponsors, the creator's own product
-(template / course / script), a Google Play app, or ads. NO affiliate links,
-NO SaaS. Prefer tutorial / build / how-to angles over comparisons or reviews.
+The creator produces everything with AI and automation (AI script, AI voice,
+AI visuals, AI-written and AI-translated text, AI-coded tools and apps), so
+plan for a repeatable, automatable format that a solo creator can batch.
+
+Rules: monetization must be ads, direct sponsors, or a free Google Play app /
+web tool with ads. NO affiliate links, NO SaaS, NO selling products or
+courses. Prefer how-to / explainer angles over comparisons or reviews.
 
 Return ONLY JSON with exactly these keys:
 {{"titles": [10 strings, written in {lang}, concrete and click-worthy, no clickbait lies],
-  "outline": "markdown bullet outline with retention beats (hook, payoff, next step)",
-  "format": "long-form video | short | blog | app | product",
+  "outline": "markdown bullet outline with retention beats (hook, payoff, next step), then a short 'AI pipeline' section: which AI step produces what, what to automate",
+  "format": "long-form video | short | blog | web tool | app",
   "monetization": "path + one-sentence reason",
   "hours": number (realistic production hours for one person)}}"""
 

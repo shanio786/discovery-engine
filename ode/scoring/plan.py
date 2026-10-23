@@ -9,7 +9,15 @@ from typing import Any
 
 from ode.config import Config
 from ode.db import Database
-from ode.scoring.actions import PLATFORM_LABEL, Action, TopicView, plan_topic, select_plan
+from ode.scoring.actions import (
+    LANGUAGE_NAME,
+    PLATFORM_LABEL,
+    Action,
+    TopicView,
+    attach_also_in,
+    plan_topic,
+    select_plan,
+)
 from ode.scoring.report import UNVALIDATED
 
 
@@ -49,6 +57,7 @@ async def load_views(db: Database, config: Config, as_of: date) -> list[TopicVie
             unanswered=gp.get("unanswered"), missing_in=d.get("missing_in") or [],
             wiki_langs=d.get("wiki_langs"), market_value=config.market_value(r["market"]),
             playstore=ps.get((r["topic_id"], r["market"]), {}), topic_id=r["topic_id"],
+            tutorial=bool(d.get("tutorial")), tool_keyword=d.get("tool_keyword"),
         ))
     return views
 
@@ -66,9 +75,11 @@ async def build_plan(db: Database, config: Config, as_of: date) -> list[Action]:
         if v.confidence < min_conf:
             continue
         actions += plan_topic(v, config=cfg, market_values=values, language_markets=lang_market)
-    return select_plan(actions, top_n=int(cfg.get("top_n", 25)),
+    plan = select_plan(actions, top_n=int(cfg.get("top_n", 25)),
                        per_market_max=int(cfg.get("per_market_max", 4)),
                        per_topic_max=int(cfg.get("per_topic_max", 3)))
+    attach_also_in(plan, actions, int(cfg.get("also_in_max", 6)))
+    return plan
 
 
 async def attach_briefs(db: Database, plan: list[Action], days: int = 14) -> dict[int, dict]:
@@ -104,6 +115,9 @@ def render_plan_markdown(plan: list[Action], as_of: date,
                 + (f" · demand `{a.source_market}` se saabit" if a.source_market else ""), "",
                 "**Kyun:**"]
         out += [f"- {w}" for w in a.why]
+        if a.also_in:
+            langs = ", ".join(f"{LANGUAGE_NAME.get(lg, lg)} (ease {e:.0f})" for lg, e in a.also_in)
+            out += ["", f"**AI se in languages mein bhi copy karo (yahan bhi khula hai):** {langs}"]
         out += ["", "**Pehle steps:**"]
         out += [f"{n}. {s}" for n, s in enumerate(a.steps, 1)]
         b = briefs.get(i - 1)
@@ -114,8 +128,9 @@ def render_plan_markdown(plan: list[Action], as_of: date,
         if a.unverified:
             out += ["", "_Abhi verify nahi hua: " + "; ".join(a.unverified) + "_"]
         out.append("")
-    out += ["---", "_Platforms: " + " · ".join(PLATFORM_LABEL.values()) + ". Affiliate aur SaaS "
-            "jaan boojh kar shamil nahi._"]
+    out += ["---", "_Platforms: " + " · ".join(PLATFORM_LABEL.values()) + ". Sab kuch AI aur "
+            "automation se banta hai. Affiliate, SaaS aur product selling jaan boojh kar shamil "
+            "nahi._"]
     return "\n".join(out) + "\n"
 
 
@@ -126,6 +141,8 @@ def render_plan_table(plan: list[Action]) -> str:
         lines.append(f"{i:>3} {a.score:>6.0f} {a.ease:>4.0f} {a.value:>5.0f}  {a.platform:8} "
                      f"{a.market:6} {a.topic}{src}")
         lines.append(f"      ↳ {a.why[0] if a.why else ''}")
+        if a.also_in:
+            lines.append("      ↳ also open in: " + ", ".join(lg for lg, _ in a.also_in))
     return "\n".join(lines)
 
 

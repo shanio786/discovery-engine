@@ -1,7 +1,7 @@
 """Score components. Pure functions — no I/O — so every rule is unit-tested.
 
     DEMAND       0-100   how many people want this (log-normalized per market)
-    MONEY        0-100   what a visitor is worth via SPONSOR / PRODUCT / APP / ADS
+    MONEY        0-100   what a visitor is worth via SPONSOR / APP / ADS
     GAP          0-100   how under-served it is (outliers, no dominant channel,
                          unanswered questions)
     COMPETITION  1-100   how much competing content exists (last 180 days)
@@ -72,6 +72,10 @@ class Money:
     score: float
     paths: dict[str, str] = field(default_factory=dict)   # path -> why it's eligible
     comparison_penalty: bool = False
+    tutorial: bool = False                                # how-to / tech intent
+
+
+DEFAULT_PATHS = ("SPONSOR", "APP", "ADS")  # no affiliate, no SaaS, no selling
 
 
 def money_profile(
@@ -83,45 +87,62 @@ def money_profile(
 ) -> Money:
     """Eligible monetization paths and blended revenue-per-visitor.
 
-    ADS is always available. PRODUCT / APP trigger on intent keywords in the
-    topic's titles/queries; SPONSOR on a B2B audience (seed `audience: b2b`)
-    or a professional Wikidata class. Comparison/review intent (old affiliate
-    territory) is deprioritised. CPC-based SPONSOR triggers arrive with the
-    Phase-4 verify layer.
+    Only `enabled_paths` count (default SPONSOR / APP / ADS: the operator does
+    no affiliate, SaaS or product selling). ADS is always available and pays a
+    higher RPM for tutorial / tech intent (keywords or a teachable Wikidata
+    class). APP triggers on utility keywords; SPONSOR on a B2B audience or a
+    professional class. Comparison/review intent is deprioritised.
     """
     rpv: dict[str, float] = {"SPONSOR": 0.25, "PRODUCT": 0.045, "APP": 0.030, "ADS": 0.010}
     rpv.update({k.upper(): float(v) for k, v in (config.get("rpv") or {}).items()})
+    enabled = {p.upper() for p in (config.get("enabled_paths") or DEFAULT_PATHS)} | {"ADS"}
     blob = " ".join(t for t in texts if t)
-    paths: dict[str, str] = {"ADS": "always available"}
-    for kw in config.get("product_keywords", []):
-        if _has(blob, kw):
-            paths.setdefault("PRODUCT", f"intent keyword '{kw.strip()}'")
-            break
+    tut_kw = next((kw for kw in (config.get("tutorial_keywords")
+                                 or config.get("product_keywords") or [])
+                   if _has(blob, kw)), None)
+    tutorial = bool(tut_kw) or audience == "b2b" or (
+        kind is not None and kind in set(config.get("tutorial_classes") or []))
+    ads_rpv = rpv["ADS"] * (float(config.get("tutorial_ads_multiplier", 1.0)) if tutorial else 1.0)
+
+    paths: dict[str, str] = {
+        "ADS": ("how-to / tech audience: higher ad RPM" if tutorial else "always available")}
+    if tutorial and "PRODUCT" in enabled:
+        paths["PRODUCT"] = f"intent keyword '{tut_kw.strip()}'" if tut_kw else "how-to audience"
     for kw in config.get("app_keywords", []):
         if _has(blob, kw):
-            paths.setdefault("APP", f"utility keyword '{kw.strip()}'")
+            paths["APP"] = f"utility keyword '{kw.strip()}'"
             break
     if audience == "b2b":
         paths.setdefault("SPONSOR", "B2B / professional audience (seed)")
-        paths.setdefault("PRODUCT", "B2B audience buys templates/courses")
     if kind:
         label = (config.get("class_labels") or {}).get(kind)
         reason = f"topic type: {label}" if label else f"Wikidata class {kind}"
         for path in (config.get("class_paths") or {}).get(kind, []):
             paths.setdefault(str(path).upper(), reason)
+    paths = {k: v for k, v in paths.items() if k in enabled}
 
-    ordered = sorted(paths, key=lambda p: rpv.get(p, 0.0), reverse=True)
+    value = {p: (ads_rpv if p == "ADS" else rpv.get(p, 0.0)) for p in paths}
+    ordered = sorted(paths, key=lambda p: value[p], reverse=True)
     primary = ordered[0]
     secondary = float(config.get("secondary_weight", 0.2))
-    blended = rpv[primary] + secondary * sum(rpv.get(p, 0.0) for p in ordered[1:])
+    blended = value[primary] + secondary * sum(value[p] for p in ordered[1:])
     penalty = any(_has(blob, kw) for kw in config.get("comparison_keywords", []))
     if penalty:
         blended *= float(config.get("comparison_penalty", 0.7))
 
     ads = rpv["ADS"]
-    best = rpv["SPONSOR"] + secondary * (rpv["PRODUCT"] + rpv["APP"] + rpv["ADS"])
+    best_vals = sorted((rpv["ADS"] * float(config.get("tutorial_ads_multiplier", 1.0))
+                        if p == "ADS" else rpv.get(p, 0.0)) for p in enabled)[::-1]
+    best = best_vals[0] + secondary * sum(best_vals[1:])
     score = 100.0 * math.log1p(blended / ads) / math.log1p(best / ads)
-    return Money(primary, round(blended, 5), round(min(100.0, max(0.0, score)), 2), paths, penalty)
+    return Money(primary, round(blended, 5), round(min(100.0, max(0.0, score)), 2), paths,
+                 penalty, tutorial)
+
+
+def intent_keyword(texts: Iterable[str], keywords: Iterable[str]) -> str | None:
+    """First keyword (whole word/phrase) found in the topic's texts, or None."""
+    blob = " ".join(t for t in texts if t)
+    return next((kw.strip() for kw in keywords if _has(blob, kw)), None)
 
 
 # ------------------------------------------------------------------ gap

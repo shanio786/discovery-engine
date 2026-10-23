@@ -41,8 +41,9 @@ def action(**kw):
 
 def test_prompt_states_language_platform_and_rules():
     p = build_prompt(action())
-    assert "German" in p and "Blog / website" in p and "Wärmepumpe" in p
-    assert "NO affiliate" in p and "NO SaaS" in p
+    assert "German" in p and "AI blog / website" in p and "Wärmepumpe" in p
+    assert "NO affiliate" in p and "NO SaaS" in p and "NO selling" in p
+    assert "AI and automation" in p
 
 
 def test_parse_brief_variants():

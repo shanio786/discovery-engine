@@ -1,25 +1,26 @@
 """From scored topics to "do THIS, NOW": platform + language + why + first steps.
 
-For every scored topic in every market we consider five ways to monetise it
-without affiliate or SaaS:
+The operator produces everything with AI and automation, so any subject with
+demand and room is fair game. For every scored topic in every market we
+consider five formats (no affiliate, no SaaS, no product selling):
 
-    BLOG     search-intent articles (ads + your own product)
-    YOUTUBE  long-form tutorials (ads + sponsors + your product)
-    SHORTS   YouTube Shorts / TikTok / Instagram Reels (one video, three apps)
-    APP      a small Google Play app (tracker / calculator / planner ...)
-    PRODUCT  templates, scripts, mini-courses sold directly
+    BLOG      AI-written articles, AI-translated into other open languages (ads)
+    YOUTUBE   faceless AI videos: script -> AI voice -> AI visuals (ads, sponsors)
+    SHORTS    YouTube Shorts / TikTok / Instagram Reels, one AI video, three apps
+    TOOLSITE  an AI-built free web tool (calculator / converter / generator), ads
+    APP       an AI-built Google Play app (AdMob)
 
 Each candidate gets
     EASE   0-100  how easy it is to rank / go viral there (supply vs demand)
     VALUE  0-100  what a visitor is worth (money paths x market value)
 and   SCORE = momentum x geomean(ease, value, demand) x confidence factor
 
-Cross-language arbitrage is first-class: a topic proven in one market whose
-Wikipedia has no article in another configured language becomes a BLOG /
-YOUTUBE action IN that language, where there is demand nearby and no supply.
+Because AI makes translation nearly free, every plan item also lists the
+other languages where the same topic is open ("also_in"), and a topic proven
+in one market with no Wikipedia article in another configured language
+becomes a "be first" action in that language.
 
-Pure functions: no I/O. Every signal that is still a guess is listed in
-`unverified`, so the plan never pretends to know more than it does.
+Pure functions, no I/O. Anything still guessed is listed in `unverified`.
 """
 
 from __future__ import annotations
@@ -29,13 +30,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-PLATFORMS = ("BLOG", "YOUTUBE", "SHORTS", "APP", "PRODUCT")
+PLATFORMS = ("BLOG", "YOUTUBE", "SHORTS", "TOOLSITE", "APP")
 PLATFORM_LABEL = {
-    "BLOG": "Blog / website",
-    "YOUTUBE": "YouTube (long videos)",
-    "SHORTS": "Shorts · TikTok · Reels",
-    "APP": "Play Store app",
-    "PRODUCT": "Digital product (template / course / script)",
+    "BLOG": "AI blog / website",
+    "YOUTUBE": "YouTube (faceless AI videos)",
+    "SHORTS": "Shorts · TikTok · Reels (AI video)",
+    "TOOLSITE": "AI-built web tool site",
+    "APP": "AI-built Play Store app",
 }
 LANGUAGE_NAME = {
     "en": "English", "de": "German", "ja": "Japanese", "fr": "French", "es": "Spanish",
@@ -72,6 +73,8 @@ class TopicView:
     market_value: float = 0.5
     playstore: Mapping[str, float] = field(default_factory=dict)
     topic_id: int | None = None
+    tutorial: bool = False
+    tool_keyword: str | None = None
 
 
 @dataclass
@@ -87,7 +90,8 @@ class Action:
     steps: list[str]
     unverified: list[str]
     topic_id: int | None = None
-    source_market: str | None = None   # set for cross-language actions
+    source_market: str | None = None   # set for cross-language "be first" actions
+    also_in: list[tuple[str, float]] = field(default_factory=list)  # (language, ease)
 
     @property
     def headline(self) -> str:
@@ -143,34 +147,47 @@ def _steps(platform: str, t: TopicView, lang_name: str) -> list[str]:
     n = t.name
     if platform == "BLOG":
         return [
-            f"Apne Namecheap domains mein se ek '{n}' ke liye rakho (ya existing site par alag section).",
-            f"{lang_name} mein 10 'how-to' articles likho — har aam sawal ka ek alag article.",
-            "Har article mein apna free checklist/template do (email list), phir paid version.",
-            "Google Search Console lagao; 4–6 hafte baad dekho kaunse articles rank ho rahe hain, unhi par aur likho.",
+            f"Ek Namecheap domain (ya existing site ka section) '{n}' ke liye.",
+            (f"AI se {lang_name} mein 30 articles: har aam sawal ka ek (outline → AI draft → "
+            "facts check → thori apni editing). Publishing n8n se automate."),
+            ("Wohi articles AI se upar likhi khuli languages mein translate karo, har "
+            "language ka apna folder (/de/, /ja/ …) = naya traffic, taqreeban muft."),
+            ("Kamai: display ads (pehle AdSense, traffic barhe to Ezoic/Mediavine). 4–6 hafte "
+            "baad Search Console: jo rank ho raha hai usi par aur likho."),
         ]
     if platform == "YOUTUBE":
         return [
-            f"{lang_name} mein 5 tutorial videos ki series: beginner → advanced '{n}'.",
-            "Har video ek masla hal kare; title mein masla + nateeja (e.g. '… in 10 minutes').",
-            "Description mein apna template/product; 1k subs ke baad sponsors ko email karo.",
+            (f"Faceless AI channel '{n}' ({lang_name}): AI script → AI voice → AI visuals / "
+            "stock clips → ek editing template."),
+            ("Pehle 10 videos ka batch banao; upload, title, description, thumbnail n8n se "
+            "automate."),
+            "Har video ek sawal ka jawab de; title mein sawal + nateeja.",
+            "Kamai: YouTube ads (1k subs + 4k ghante ke baad), phir sponsors.",
         ]
     if platform == "SHORTS":
         return [
-            f"7 din tak roz 1 short '{n}' par — ek hi video YouTube Shorts, TikTok aur Reels par.",
-            "Pehle 2 second mein hook (nateeja dikhao), 20–40 second lambai.",
-            "Jo short chale, usi ka long video banao (YouTube) — wahan asal kamai hai.",
+            f"AI se roz 1–3 shorts '{n}' par (20–40 sec), pehle 2 second mein hook.",
+            ("Ek automation pipeline: wohi video YouTube Shorts + TikTok + Instagram Reels "
+            "par auto-post."),
+            "Jo short chale, usi ka long video banao: asal kamai wahan hai.",
         ]
-    if platform == "APP":
+    if platform == "TOOLSITE":
+        tool = f" ({t.tool_keyword})" if t.tool_keyword else ""
         return [
-            f"Play Store par '{n}' ki top apps ki 1-star reviews parho — wohi shikayatein tumhari feature list hain.",
-            "Sirf ek kaam achhe se karne wali chhoti app (tracker / calculator / planner) 1–2 hafte mein.",
-            f"ASO: app title aur description mein '{n}' + {lang_name} keywords; screenshots par fayda likho.",
-            "Kamai: ads + ek baar ka 'Pro' unlock (subscription nahi).",
+            (f"AI (Claude Code) se ek single-page free tool banao: '{n}'{tool}. Ek kaam, tez, "
+            "mobile par achha."),
+            "Interface AI se 12 languages mein translate; har language ka apna URL.",
+            ("Tool ke neeche 300–600 words ki AI guide (Google ke liye) + apne doosre tools "
+            "ke links."),
+            "Kamai: display ads. Tool free hai, koi subscription nahi.",
         ]
-    return [  # PRODUCT
-        f"'{n}' ke liye ek ready-made template / script / checklist banao (Notion, Excel, ya code).",
-        "Gumroad ya Payhip par becho (khud ka product — affiliate nahi).",
-        "Traffic: isi topic ke blog/YouTube/Shorts se; har content mein product ka link.",
+    return [  # APP
+        (f"Play Store par '{n}' ki top apps ki 1-star reviews parho: wohi shikayatein "
+        "tumhari feature list hain."),
+        "AI (Claude Code + Flutter) se ek kaam wali app 1–2 hafte mein; kamai AdMob ads se.",
+        "Store listing (title, description, screenshot text) AI se 12 languages mein.",
+        ("Har 2–4 hafte update: jo competitors saal bhar se update nahi hue, unhein yahin "
+        "harao."),
     ]
 
 
@@ -185,11 +202,11 @@ def plan_topic(t: TopicView, *, config: Mapping[str, Any] | None = None,
     paths = set(t.money_paths)
     value = _clip(t.money * t.market_value)
     sd = supply_demand_ease(t.competing_videos, t.mean30, sat_ratio)
-    views = _views(t)
-    phase = _phase_line(t)
-    base_why = [x for x in (phase, views) if x]
+    base_why = [x for x in (_phase_line(t), _views(t)) if x]
     no_yt = [] if sd is not None or t.outlier is not None else [
         "YouTube competition abhi naapi nahi gayi (kal ka probe batayega)"]
+    ps = t.playstore or {}
+    tool_intent = bool(t.tool_keyword) or "APP" in paths
     actions: list[Action] = []
 
     def add(platform: str, ease: float, val: float, why: list[str], unverified: list[str],
@@ -201,30 +218,32 @@ def plan_topic(t: TopicView, *, config: Mapping[str, Any] | None = None,
             round(ease, 1), round(val, 1), why, _steps(platform, t, LANGUAGE_NAME.get(lg, lg)),
             unverified, t.topic_id, source))
 
-    # --- YOUTUBE: teachable topics; ease from supply/demand + small-channel outliers
-    if paths & {"PRODUCT", "SPONSOR"} or t.demand >= 60:
+    # --- YOUTUBE: AI explainers work for almost any subject people look up
+    if t.tutorial or "SPONSOR" in paths or t.demand >= 30:
         ease = _mean([sd, t.outlier, None if t.competition is None else 101 - t.competition], 50.0)
         why = [*base_why]
         if t.competing_videos is not None:
-            why.append(f"pichhle 180 din mein sirf {t.competing_videos:,.0f} YouTube videos "
-                       f"(ease {sd:.0f}/100)" if sd is not None else
-                       f"{t.competing_videos:,.0f} competing YouTube videos")
+            why.append(f"pichhle 180 din mein {t.competing_videos:,.0f} competing YouTube videos"
+                       + (f" (ease {sd:.0f}/100)" if sd is not None else ""))
         if t.outlier is not None and t.outlier >= 50:
             why.append("chhote channels apne subscribers se kai guna zyada views le rahe hain "
                        "= viral hona aasan")
-        why.append(f"paisa: {t.money_path} ({t.money_paths.get(t.money_path, '')})")
+        if t.tutorial:
+            why.append("how-to / tech audience: ads ka RPM zyada")
+        if "SPONSOR" in paths:
+            why.append(f"sponsors mil sakte hain: {t.money_paths['SPONSOR']}")
         add("YOUTUBE", ease, value, why, list(no_yt))
 
     # --- SHORTS: ride a rising trend; lower RPM, huge reach
     if t.phase in ("BREAKOUT", "GROWING"):
         trend = 90.0 if t.phase == "BREAKOUT" else 70.0
-        ease = _mean([trend, sd], trend)
-        why = [*base_why, ("short-form trend ke shuru mein sab se tez barhta hai; ek video teen "
-               "platforms (Shorts, TikTok, Reels) par")]
-        add("SHORTS", ease, _clip(value * 0.6), why,
-            [*no_yt, "TikTok/Instagram ka direct data nahi (free API nahi) — trend YouTube/Wikipedia se"])
+        why = [*base_why, ("short-form trend ke shuru mein sab se tez barhta hai; ek AI video "
+                           "teen platforms (Shorts, TikTok, Reels) par")]
+        add("SHORTS", _mean([trend, sd], trend), _clip(value * 0.6), why,
+            [*no_yt, ("TikTok/Instagram ka direct data nahi (free API nahi): trend YouTube aur "
+                     "Wikipedia se")])
 
-    # --- BLOG: search demand; harder to judge without SERP data
+    # --- BLOG: search demand; ranking difficulty needs SERP data (Phase 4)
     ease = _mean([sd, 60.0 if (t.wiki_langs or 99) < 15 else None], 50.0)
     why = [*base_why, "log ise search kar rahe hain = blog traffic ka asal source"]
     if t.wiki_langs is not None and t.wiki_langs < 15:
@@ -232,11 +251,22 @@ def plan_topic(t: TopicView, *, config: Mapping[str, Any] | None = None,
     add("BLOG", ease, value, why,
         ["Google ranking difficulty abhi naapi nahi (Phase 4: DataForSEO top 20/din)"])
 
-    # --- APP: utility intent or a measured Play Store gap
-    ps = t.playstore or {}
-    if "APP" in paths or ps:
+    # --- TOOLSITE: people want to calculate / convert / generate something
+    if tool_intent:
         ps_gap = ps.get("ps_gap")
-        ease = _mean([ps_gap], 50.0)
+        ease = _mean([ps_gap, 60.0 if t.tool_keyword else None], 50.0)
+        why = [*base_why]
+        if t.tool_keyword:
+            why.append(f"log '{t.tool_keyword}' jaisa tool dhoondte hain = seedha tool traffic")
+        if ps.get("ps_top_rating") is not None and ps["ps_top_rating"] < 4.2:
+            why.append(f"Play Store ki top apps sirf {ps['ps_top_rating']:.1f}★: ek achha web "
+                       "tool aage nikal sakta hai")
+        add("TOOLSITE", ease, value, why, [] if ps else
+            ["web par maujooda tools ka muqabla abhi naapa nahi"])
+
+    # --- APP: utility intent or a measured Play Store gap
+    if "APP" in paths or ps:
+        ease = _mean([ps.get("ps_gap")], 50.0)
         why = [*base_why]
         if ps.get("ps_top_installs"):
             why.append(f"top app ke {ps['ps_top_installs']:,.0f} installs = demand saabit")
@@ -248,17 +278,8 @@ def plan_topic(t: TopicView, *, config: Mapping[str, Any] | None = None,
             why.append(f"{ps['ps_stale_share']:.0%} top apps saal bhar se update nahi hui")
         if "APP" in paths:
             why.append(f"utility intent: {t.money_paths['APP']}")
-        unv = [] if ps else ["Play Store abhi check nahi hua (agle run mein hoga)"]
-        add("APP", ease, _clip(value * (1.2 if "APP" in paths else 0.8)), why, unv)
-
-    # --- PRODUCT: professional / how-to audiences buy templates & scripts
-    if paths & {"PRODUCT", "SPONSOR"}:
-        ease = _mean([t.gap], 50.0)
-        why = [*base_why, f"paisa: {t.money_paths.get('PRODUCT') or t.money_paths.get('SPONSOR')}"]
-        if t.unanswered:
-            why.append(f"{t.unanswered:.0f}% Reddit sawalon ka jawab nahi mila = log madad dhoond rahe hain")
-        add("PRODUCT", ease, _clip(value * 1.1), why, [] if t.gap is not None else [
-            "gap abhi naapa nahi gaya"])
+        add("APP", ease, _clip(value * (1.2 if "APP" in paths else 0.8)), why,
+            [] if ps else ["Play Store abhi check nahi hua (agle run mein hoga)"])
 
     # --- CROSS-LANGUAGE: proven here, no article there -> be first in that language
     mv = market_values or {}
@@ -268,16 +289,32 @@ def plan_topic(t: TopicView, *, config: Mapping[str, Any] | None = None,
             continue
         target_value = _clip(t.money * mv.get(target, 0.5))
         why = [*base_why, (f"{t.market} mein demand saabit, lekin {LANGUAGE_NAME.get(lg, lg)} "
-               "Wikipedia par article hi nahi = us language mein supply taqreeban zero"),
-               "pehle aane wala rank karta hai"]
-        add("BLOG", 85.0, target_value, why,
-            ["us language mein demand ka andaza (doosri language se liya gaya)"],
-            market=target, language=lg, source=t.market)
-        if paths & {"PRODUCT", "SPONSOR"} or t.demand >= 60:
-            add("YOUTUBE", 80.0, target_value, why,
-                ["us language mein demand ka andaza (doosri language se liya gaya)"],
-                market=target, language=lg, source=t.market)
+                           "Wikipedia par article hi nahi = us language mein supply taqreeban "
+                           "zero"),
+               "pehle aane wala rank karta hai; AI translation se lagat taqreeban zero"]
+        guess = ["us language mein demand ka andaza (doosri language se liya gaya)"]
+        add("BLOG", 85.0, target_value, why, guess, market=target, language=lg, source=t.market)
+        add("YOUTUBE", 80.0, target_value, why, guess, market=target, language=lg,
+            source=t.market)
+        if tool_intent:
+            add("TOOLSITE", 85.0, target_value, why, guess, market=target, language=lg,
+                source=t.market)
     return actions
+
+
+def attach_also_in(plan: list[Action], candidates: list[Action], max_n: int = 6) -> None:
+    """For each plan item, the other languages where the SAME topic and format
+    is also open, best first: one AI production, many languages."""
+    by_key: dict[tuple[int | None, str], list[Action]] = {}
+    for a in candidates:
+        if a.topic_id is not None:
+            by_key.setdefault((a.topic_id, a.platform), []).append(a)
+    for a in plan:
+        others = [o for o in by_key.get((a.topic_id, a.platform), []) if o.language != a.language]
+        best: dict[str, float] = {}
+        for o in sorted(others, key=lambda o: o.score, reverse=True):
+            best.setdefault(o.language, o.ease)
+        a.also_in = list(best.items())[:max_n]
 
 
 def select_plan(actions: list[Action], *, top_n: int = 25, per_market_max: int = 4,

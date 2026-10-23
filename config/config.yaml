@@ -53,8 +53,8 @@ wiki_project_overrides:
   pt-BR: pt.wikipedia
 
 # ------------------------------------------------------------------
-# Seeds = the operator's niches. Tutorial / build / automate intent
-# (PRODUCT + SPONSOR monetization). `wiki` is the ENGLISH article title;
+# Seeds = starting points for discovery (any subject works; content is
+# produced with AI, so the subject only has to have demand and room). `wiki` is the ENGLISH article title;
 # its title in every other language is resolved automatically through
 # Wikidata. `queries` are per LANGUAGE — a seed with no query for a
 # language is not searched in that market (no English noise in de-DE).
@@ -229,6 +229,7 @@ actions:
   top_n: 25                     # actions listed in the plan
   per_market_max: 5             # spread the plan over markets
   per_topic_max: 3              # e.g. Shorts + YouTube + Blog for one breakout
+  also_in_max: 6                # "same action, other open languages" listed per item
   min_confidence: 0.0
   # supply/demand: competing YouTube videos (180d) per daily Wikipedia view;
   # at this ratio YouTube ease bottoms out
@@ -317,33 +318,43 @@ scoring:
   probe_top_k: 8                # best unprobed topics per market queued for YouTube
 
 # ------------------------------------------------------------------
-# Monetization. No affiliate path by design. Revenue per visitor (USD).
+# Monetization. Paths you are willing to use. Removed BY CHOICE: affiliate,
+# SaaS and selling your own products. Revenue per visitor (USD, estimates).
 # ------------------------------------------------------------------
 monetization:
-  rpv: {SPONSOR: 0.25, PRODUCT: 0.045, APP: 0.030, ADS: 0.010}
+  enabled_paths: [SPONSOR, APP, ADS]
+  rpv: {SPONSOR: 0.25, APP: 0.030, ADS: 0.010}
+  tutorial_ads_multiplier: 1.5  # how-to / tech audiences earn a higher ad RPM (estimate)
   secondary_weight: 0.2         # extra eligible paths add 20% of their RPV
-  product_keywords: [how to, tutorial, build, automate, automation, setup, template,
-                     anleitung, einrichten, vorlage, automatisieren, automatisierung,
-                     installieren, erstellen, projekt]
-  app_keywords: [tracker, calculator, planner, converter, monitor, rechner, planer]
+  # how-to / tutorial intent (raises ad value; marks teachable topics)
+  tutorial_keywords: [how to, tutorial, build, automate, automation, setup, guide,
+                      anleitung, einrichten, automatisieren, automatisierung, installieren,
+                      erstellen, projekt, tutoriel, guía, guida, poradnik, uitleg,
+                      nasıl, cara, 使い方]
+  # utility intent -> a Play Store app and/or an AI-built web tool site
+  app_keywords: [tracker, calculator, planner, converter, monitor, timer, counter,
+                 rechner, umrechner, planer, calculadora, conversor, calculatrice,
+                 convertisseur, calcolatrice, kalkulator, hesaplama, 計算]
+  tool_keywords: [calculator, converter, generator, checker, counter, maker, finder,
+                  planner, timer, estimator, formula, calculation, conversion, unit,
+                  rechner, umrechner, berechnen, calculadora, conversor, generador,
+                  calculatrice, convertisseur, générateur, calcolatrice, convertitore,
+                  kalkulator, przelicznik, hesaplama, dönüştürücü, konversi, 計算, 変換]
   # comparison / review intent was affiliate territory -> deprioritised
   comparison_keywords: [" vs ", versus, best, review, comparison, alternative, vergleich, test]
   comparison_penalty: 0.7
-  # Human-readable names for the classes below (shown in reports).
+  # Wikidata classes whose topics are teachable (tutorial intent).
+  tutorial_classes: [Q7397, Q166142, Q9143, Q193424, Q235557, Q11016, Q68, Q28640,
+                     Q11862829]
+  # Human-readable names for classes (shown in reports).
   class_labels: {Q7397: software, Q166142: application, Q9143: programming language,
                  Q193424: web service, Q35127: website, Q235557: file format,
                  Q11016: technology, Q2424752: product, Q68: computer, Q28640: profession,
                  Q11862829: academic discipline}
-  # Wikidata class (P31) -> eligible paths. Heuristic; extend as you learn.
+  # Wikidata class (P31) -> extra eligible paths. Heuristic; extend as you learn.
   class_paths:
-    Q7397: [PRODUCT, SPONSOR]      # software
-    Q166142: [PRODUCT, SPONSOR]    # application
-    Q9143: [PRODUCT, SPONSOR]      # programming language
-    Q193424: [PRODUCT]             # web service
-    Q35127: [PRODUCT]              # website
-    Q235557: [PRODUCT, APP]        # file format
-    Q11016: [PRODUCT]              # technology
-    Q2424752: [PRODUCT]            # product
-    Q68: [PRODUCT]                 # computer
-    Q28640: [PRODUCT, SPONSOR]     # profession
-    Q11862829: [PRODUCT]           # academic discipline
+    Q7397: [SPONSOR]               # software: tool makers sponsor tutorials
+    Q166142: [SPONSOR]             # application
+    Q9143: [SPONSOR]               # programming language
+    Q235557: [APP]                 # file format: viewers / converters
+    Q28640: [SPONSOR]              # profession: B2B audience

@@ -34,18 +34,36 @@ def test_weighted_mean_renormalizes_over_available():
     assert weighted_mean({"wikipedia": None}, w) is None
 
 
-def test_money_paths_and_no_affiliate():
+def test_money_paths_no_affiliate_no_saas_no_selling():
     plain = money_profile(["Some topic"], kind=None, audience=None, config=MONEY_CFG)
-    assert plain.primary == "ADS" and set(plain.paths) == {"ADS"}
+    assert plain.primary == "ADS" and set(plain.paths) == {"ADS"} and not plain.tutorial
     tut = money_profile(["docker compose tutorial"], kind=None, audience=None, config=MONEY_CFG)
-    assert tut.primary == "PRODUCT" and tut.score > plain.score
+    assert tut.primary == "ADS" and tut.tutorial and tut.score > plain.score  # higher ad RPM
     app = money_profile(["habit tracker"], kind=None, audience=None, config=MONEY_CFG)
-    assert "APP" in app.paths
+    assert app.primary == "APP"
     b2b = money_profile(["Power BI"], kind=None, audience="b2b", config=MONEY_CFG)
-    assert b2b.primary == "SPONSOR" and b2b.score > 95  # 100 only with every path
+    assert b2b.primary == "SPONSOR" and b2b.score > 95
     software = money_profile(["Obsidian"], kind="Q7397", audience=None, config=MONEY_CFG)
     assert software.primary == "SPONSOR" and software.paths["SPONSOR"] == "topic type: software"
-    assert "AFFILIATE" not in str(MONEY_CFG).upper()
+    for m in (plain, tut, app, b2b, software):
+        assert set(m.paths) <= {"SPONSOR", "APP", "ADS"}
+    assert "AFFILIATE" not in str(MONEY_CFG).upper() and "PRODUCT" not in MONEY_CFG["enabled_paths"]
+
+
+def test_product_path_only_when_explicitly_enabled():
+    cfg = {**MONEY_CFG, "enabled_paths": ["SPONSOR", "APP", "ADS", "PRODUCT"],
+           "rpv": {**MONEY_CFG["rpv"], "PRODUCT": 0.045}}
+    m = money_profile(["docker compose tutorial"], kind=None, audience=None, config=cfg)
+    assert "PRODUCT" in m.paths
+
+
+def test_intent_keyword():
+    from ode.scoring.components import intent_keyword
+    kws = MONEY_CFG["tool_keywords"]
+    assert intent_keyword(["BMI calculator"], kws) == "calculator"
+    assert intent_keyword(["Zinsrechner"], kws) is None          # whole words only
+    assert intent_keyword(["Rechner für Zinsen"], kws) == "rechner"
+    assert intent_keyword(["Heat pump"], kws) is None
 
 
 def test_comparison_intent_is_deprioritised_and_matches_whole_words():
@@ -58,7 +76,7 @@ def test_comparison_intent_is_deprioritised_and_matches_whole_words():
 
 def test_german_intent_keywords():
     m = money_profile(["smart home einrichten"], kind=None, audience=None, config=MONEY_CFG)
-    assert m.primary == "PRODUCT"
+    assert m.tutorial and m.primary == "ADS"
 
 
 def test_gap_score_parts():
