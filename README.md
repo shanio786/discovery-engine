@@ -45,6 +45,19 @@ Each item also carries **research** mined for it:
   times their subscriber count, with their titles and a one-line formula.
 - **Shorts competition** measured separately from long-form competition.
 
+Every item also shows **💵 roughly $X–$Y per month** once it matures and
+the hours it takes; the plan is ranked by that. Measured Google numbers
+(DataForSEO, top 20 a day, hard budget) replace guesses for blogs / tool
+sites, topics are grouped into **niches** (one channel / site with N related
+topics), every item gets a ready **pack for each other open language**, and
+**competitor** moves (a big channel entering, an upload surge, a new Google
+leader) and **TikTok / YouTube trends** show up on the items they affect.
+
+Publish something → `ode track <url>`: the engine checks it daily against
+**your own normal** and says 🔥 WINNER ("isi par 5 aur banao", put on top of
+the plan with the next angles) or 🛑 DROP (stop spending time). `ode week`
+turns your hours into the week's best mix of work.
+
 You close the loop: `ode done <id>` when you start an item (it never comes
 back), `ode result <id> --views … --revenue …` when it earns. The engine then
 learns what a visitor really pays in each market and which platform earns
@@ -58,10 +71,14 @@ you the most per hour, and re-ranks the plan. Everything also works from the
 
 | When | Job |
 |---|---|
-| 04:17 daily | full cycle: discover → collect → score → research miners → Gemini briefs |
+| 04:17 daily | full cycle: discover → collect → score → niches → research miners → DataForSEO → Gemini briefs → language packs |
+| 05:57 daily | **your content**: stats + WINNER / DROP verdicts (Telegram on change) |
 | 06:37 daily | `reports/plan-latest.md`, `gems-latest.md`, `gems-latest.csv` on the host |
 | 06:47 daily | Telegram: **today's plan** (top actions, one line each) |
 | 06:52 daily | production pack → your **n8n** webhook + `reports/pack-latest.json` |
+| Monday 06:57 | **this week's plan** for your hours (Telegram + `reports/week-latest.txt`) |
+| 15:47 daily | **competitor watch** on your topics (+ top plan topics) |
+| every 6 h | **TikTok** trending hashtags / sounds + **YouTube** most popular per country |
 | weekly | **backtest**: did past top-20s really grow? learns composite weights |
 | every hour | Wikipedia **hourly** dumps → same-day spikes → alert |
 | every hour | Google Trends "trending now" in every market's country → alert |
@@ -85,7 +102,7 @@ Korean and Vietnamese; any `<lang>-<REGION>` can be added. Set
 | **Collectors** | Wikipedia pageviews (demand backbone, human traffic only), Hacker News, YouTube, Reddit. One uniform interface. |
 | **Correct data** | Incremental fetching with overlap; interior zero-days filled; HN counts are exact per day (no 1000-hit truncation); Reddit only writes fully-covered days; "unanswered" only judged after 48h; each market gets its own Reddit scope and localized queries (no English noise in de-DE). |
 | **Resilience** | Per-item failure isolation, retries only for transient errors, Retry-After on 429, circuit breaker per host, persisted YouTube quota with least-recently-searched rotation, advisory lock against overlapping cron jobs, orphaned runs closed. |
-| **Security** | DB bound to `127.0.0.1` with a password from `.env`; API keys redacted from every error/log; container runs as non-root. |
+| **Security** | DB bound to `127.0.0.1` with a password from `.env`; API keys redacted from every error/log; container runs as non-root; dashboard only via HTTPS / SSH tunnel; backups encrypted before leaving the VPS. |
 | **Storage** | Postgres 16 + TimescaleDB hypertable, compression after 90 days, bulk COPY upserts, nightly `pg_dump` backups. |
 | **Ops** | `ode doctor` checks config, DB and every live API in seconds; every run recorded in `collector_runs` as ok / partial / skipped / error. |
 | **Scoring** | Momentum by acceleration (spec model) with spike persistence and a significance test, demand / money / gap / competition, composite, confidence, saturation forecast, cross-language gaps. Top discovered topics are queued for a free YouTube check the next day. |
@@ -95,8 +112,17 @@ Korean and Vietnamese; any `<lang>-<REGION>` can be added. Set
 | **Backtest** | Real scorer at past cut-offs (no lookahead), precision@20 vs the random base rate on a bias-safe universe; grid-searched composite weights adopted only when clearly better on most cut-offs. Report headers show the measured numbers. |
 | **Dashboard** | Phone-first, no JavaScript: plan, item detail with all research, one-tap done/drop, revenue form, work log, gems, alerts. Basic auth + lockout + CSRF + strict headers; HTTPS on your domain via Caddy. |
 | **n8n** | Daily production pack (JSON) POSTed to `N8N_WEBHOOK_URL`, HMAC-signed with `N8N_WEBHOOK_SECRET`. |
+| **Dollars** | $/month range + setup hours per item (measured Google volume or Wikipedia demand, growth by phase, capture by ease, RPM × calibrated market value; uncertainties combined in log space); pulled toward your own results once you have them. Plan ranked by it. |
+| **Weekly plan** | Hours → winners' "5 more" first, upkeep of what you run (capped, DROP excluded), then new work by $/hour with platform / market spread and a fast + evergreen mix; spread over your days. |
+| **Your content** | YouTube / Shorts / Play Store / web pages tracked daily (YouTube 1 unit per 50 videos, Play installs, Google position via DataForSEO); verdict vs the median of your own items at the same age. |
+| **DataForSEO** | Search volume (head + long tail), keyword difficulty, SERP top 10 (forum / UGC share) for the top 20 blog / tool items a day; persisted daily budget charged before every call. |
+| **Niches** | Embeddings from your RunPod endpoint (any OpenAI-compatible `/embeddings`) or Gemini, cached; leader clustering; niches ranked by demand × growth × openness × money. |
+| **Competitors** | Big channels uploading on your topics, weekly upload surges, new Google top-3 domains → stored once, alerted, plan warnings. |
+| **Social trends** | TikTok Creative Center hashtags / sounds (best effort, proxy-friendly, tolerant parser) + YouTube most popular; rising hashtags matched to topics and alerted; Shorts boost. |
+| **Language packs** | Per other open language: real search keyword, 10 titles, 8 questions (Gemini), checked against Google Autocomplete in that country. |
+| **Backups** | Nightly dump; AES-256 encrypted off-site copy via rclone (Drive / B2 / R2 / S3); failure alert; tested restore with TimescaleDB hooks. |
 | **Output** | `ode gems`: a ranked shortlist with a plain-language *why* for every row (terminal, Markdown, CSV); written daily to `reports/latest.md`. |
-| **Tests** | 200+ tests: parsers, HTTP behaviour, config, momentum edge cases (sparse, single spikes, all-zeros, noise robustness), every score component, and integration tests on a real TimescaleDB (discovery → collection → scoring, no-lookahead guarantee). CI on every push. |
+| **Tests** | 240+ tests: parsers, HTTP behaviour, config, momentum edge cases (sparse, single spikes, all-zeros, noise robustness), every score component, and integration tests on a real TimescaleDB (discovery → collection → scoring, no-lookahead guarantee). CI on every push. |
 
 Cost: **$0** beyond the VPS. Wikipedia, Wikidata and Hacker News need no keys;
 YouTube and Reddit are free and skip themselves cleanly until keys are set.
@@ -130,6 +156,12 @@ docker compose up -d scheduler web
 docker compose logs -f scheduler          # dekho kya kar raha hai
 # backups ke liye sirf ye ek cron line:
 (crontab -l 2>/dev/null; echo "7 3 * * * /opt/discovery-engine/scripts/backup.sh >> /opt/discovery-engine/logs/backup.log 2>&1") | crontab -
+
+# 7. Off-site backup (zaroor karo): VPS mar gaya to sara data + jo engine ne seekha
+./scripts/backup.sh --setup     # Google Drive / Backblaze B2 / Cloudflare R2 chuno (ek dafa)
+nano .env                       # RCLONE_REMOTE=gdrive:ode-backups, BACKUP_PASSPHRASE=<lamba password>
+./scripts/backup.sh             # test: "off-site copy: ... (AES-256 encrypted)"
+# wapas lana ho:  ./scripts/restore.sh   (list)   ./scripts/restore.sh ode-2026-10-01.dump.enc
 ```
 
 ### Telegram alerts (phone par)
@@ -164,6 +196,28 @@ har item ka `id`, platform, language, topic, steps, `questions`,
 header `X-ODE-Signature` (HMAC-SHA256 of body) check karo. Haath se:
 `docker compose run --rm app ode export` (sirf dikhata hai) /
 `ode export --send` (bhejta hai).
+
+### Optional keys — har ek kya kholti hai
+
+| `.env` | Kya milta hai |
+|---|---|
+| `DATAFORSEO_LOGIN/PASSWORD` | Blog / tool items par asli Google searches + difficulty (roz top 20, budget `dataforseo.daily_budget_usd`, default $0.75/din) |
+| `EMBEDDINGS_URL` + `EMBEDDINGS_API_KEY` | Niches — RunPod serverless (worker-infinity-embedding) ka `…/openai/v1/embeddings`; na ho to Gemini se |
+| `GEMINI_API_KEY` | Briefs, language packs, niche names, viral formula, embeddings fallback |
+| `HTTPS_PROXY` | TikTok / Google blocks se bachne ke liye tumhari proxy |
+
+### Publish kiya? Engine ko batao
+
+```bash
+docker compose run --rm app ode track https://youtu.be/XXXXXXXXXXX --id 602c7fdd
+docker compose run --rm app ode track https://mysite.com/heat-pump-cost --id 9a1b2c3d --keyword "heat pump cost"
+docker compose run --rm app ode content          # 🔥 WINNER / 📈 / 🌲 / ➖ / 🛑 DROP + agle 5 angles
+docker compose run --rm app ode week --hours 25 --save   # is hafte kya karna hai
+docker compose run --rm app ode niches           # ek channel / site = poora niche
+docker compose run --rm app ode competitors      # kaun aa raha hai tumhare topics par
+```
+
+Ye sab dashboard par bhi hai (Hafta, Mera content, Niches).
 
 ### Kaam aur kamai ka hisaab (engine isi se seekhta hai)
 
@@ -226,11 +280,19 @@ Naya code aaye to bas `./scripts/deploy.sh` chalao.
 | `ode result <id> --views N --revenue USD [--hours H]` | Totals so far for an item; the engine learns from monetized results. |
 | `ode worklog` | Your items, revenue, $/hour and what the engine learned. |
 | `ode mine` | Run the research miners now (questions, 1-star reviews, viral formats). |
+| `ode track <url> [--id ID] [--platform P] [--keyword K]` | Track something you published (YouTube / Shorts / Play app / web page). |
+| `ode content [--refresh]` · `ode untrack <n>` | Your tracked items with verdicts and next angles. |
+| `ode week [--hours H] [--save]` | This week's best mix of work for your hours. |
+| `ode niches [--refresh]` | Niches: related topics as one channel / site idea. |
+| `ode competitors [--refresh]` | Competitor events on your topics. |
+| `ode seo` | DataForSEO verify now (budget-capped). |
+| `ode langpacks` | Per-language packs now. |
+| `ode notify "text"` | Send any Telegram message (backup failures use it). |
 | `ode backtest` | Precision@20 of past rankings vs random; learns composite weights. |
 | `ode export [--send]` | Today's production pack as JSON / POST it to `N8N_WEBHOOK_URL`. |
 | `ode web [--host 0.0.0.0] [--port 8080]` | Phone dashboard (needs `DASHBOARD_PASSWORD`). |
 | `ode scheduler` | Always-on engine (what the `scheduler` compose service runs). |
-| `ode realtime hourly\|trends\|breakout\|plan` | Run one realtime job now. |
+| `ode realtime hourly\|trends\|breakout\|plan\|social` | Run one realtime job now. |
 | `ode alerts` | What was alerted (or would have been, without Telegram). |
 | `ode notify-test` | Send a Telegram test message. |
 | `ode briefs` | Gemini titles / outline / hours for today's top actions (max 5/day, needs `GEMINI_API_KEY`). |
@@ -332,8 +394,10 @@ ODE_TEST_DATABASE_URL=postgresql://ode:<pw>@localhost:5432/ode pytest -q   # + D
 1. **Harvest + discovery** ← done
 2. **Momentum/acceleration + outlier scoring + composite v1** ← done
 3. **Dashboard** ← done (phone-first, HTTPS via Caddy)
-4. DataForSEO verify layer (hard budget cap, top 20/day) — next
-5. RunPod embeddings + HDBSCAN clustering + cross-language arbitrage view
+4. **DataForSEO verify layer** ← done (hard budget cap, top 20/day)
+5. **Embeddings + niche clustering** ← done (RunPod / Gemini)
 6. **Serial outlier miner + format extraction** ← done
 7. **Backtest harness + weight optimization** ← done
-8. **Alerts + brief generator + learning from your results** ← done; competitor watch next
+8. **Alerts, briefs, learning, competitor watch, your-content verdicts, weekly portfolio,
+   language packs, social trends, encrypted backups** ← done
+9. Next: automatic revenue import (YouTube Analytics / AdSense / AdMob APIs)
