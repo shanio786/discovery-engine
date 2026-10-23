@@ -87,6 +87,7 @@ class Config:
                     wiki=s.get("wiki"),
                     queries={str(k).lower(): str(v) for k, v in queries.items() if v},
                     hn=s.get("hn"),
+                    audience=(str(s["audience"]).lower() if s.get("audience") else None),
                 )
             )
         return seeds
@@ -194,6 +195,13 @@ class Config:
     @property
     def scoring(self) -> dict[str, Any]:
         return dict(self._d.get("scoring") or {})
+
+    @property
+    def monetization(self) -> dict[str, Any]:
+        return dict(self._d.get("monetization") or {})
+
+    def seed_by_key(self, topic_key: str) -> Seed | None:
+        return next((s for s in self._seeds if s.topic_key == topic_key), None)
 
     def raw(self) -> dict[str, Any]:
         return self._d

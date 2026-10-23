@@ -2,7 +2,9 @@
 
     ode doctor                     # check config, DB and every API (run this first)
     ode initdb                     # apply schema (idempotent)
-    ode daily                      # schema -> discover -> collect  (what cron runs)
+    ode daily                      # schema -> discover -> collect -> score (cron)
+    ode score [--as-of 2026-01-31] # (re)score from stored data
+    ode gems [--market de-DE] [--format md|csv|table] [--limit 30]
     ode discover [--market de-DE]  # refresh watchlists only
     ode collect [--source wikipedia] [--market en-US]
     ode status [--limit 30]        # recent runs
@@ -18,6 +20,7 @@ import argparse
 import asyncio
 import os
 import sys
+from datetime import UTC, date, datetime
 
 from ode.config import ConfigError, get_secrets, load_config
 from ode.db import AlreadyRunning, Database
@@ -66,6 +69,17 @@ async def _discover(markets: list[str] | None) -> int:
     return _print_discovery(await discover(load_config(), get_secrets(), markets=markets))
 
 
+def _print_scoring(reports: list[dict]) -> int:
+    for r in reports:
+        if r["status"] != "ok":
+            print(f"  {r['status']:8} scoring     {r['market']:6} {r.get('error', '')}")
+            continue
+        phases = ", ".join(f"{k}={v}" for k, v in sorted(r["phases"].items()))
+        print(f"  ok       scoring     {r['market']:6} scored={r['scored']} "
+              f"probes_queued={r['probes_queued']} [{phases}]")
+    return 1 if any(r["status"] != "ok" for r in reports) else 0
+
+
 async def _daily() -> int:
     from ode.pipeline import daily
 
@@ -73,7 +87,42 @@ async def _daily() -> int:
     print("discovery:")
     rc = _print_discovery(out["discovery"])
     print("collect:")
-    return max(rc, _print_results(out["collect"]))
+    rc = max(rc, _print_results(out["collect"]))
+    print("scoring:")
+    return max(rc, _print_scoring(out["scoring"]))
+
+
+async def _score(as_of: date | None, markets: list[str] | None) -> int:
+    from ode.pipeline import score
+
+    return _print_scoring(await score(load_config(), get_secrets(), as_of=as_of, markets=markets))
+
+
+async def _gems(market: str | None, limit: int, fmt: str, min_conf: float, unknown: bool,
+                as_of: date | None) -> int:
+    from ode.scoring import report
+
+    config = load_config()
+    db = await Database.connect(get_secrets().database_url)
+    day = as_of or datetime.now(UTC).date()
+    try:
+        gems = await report.load_gems(db, day, market=market, limit=limit,
+                                      min_confidence=min_conf, include_unknown=unknown)
+        if not gems:
+            print("no scores yet — run `ode daily` (or `ode score`)", file=sys.stderr)
+            return 1
+        if fmt == "csv":
+            print(report.render_csv(gems), end="")
+        elif fmt == "md":
+            gaps = await report.cross_language_gaps(db, day, [market] if market
+                                                    else config.market_codes)
+            print(report.render_markdown(gems, gaps, day), end="")
+        else:
+            print(report.UNVALIDATED)
+            print(report.render_table(gems))
+        return 0
+    finally:
+        await db.close()
 
 
 async def _status(limit: int) -> int:
@@ -148,6 +197,17 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("status", help="recent runs + data summary")
     s.add_argument("--limit", type=int, default=30)
     sub.add_parser("watchlist", help="what is tracked, per market")
+    sc = sub.add_parser("score", help="(re)compute scores from stored data")
+    sc.add_argument("--as-of", type=date.fromisoformat, help="YYYY-MM-DD (default: today)")
+    sc.add_argument("--market", action="append")
+    g = sub.add_parser("gems", help="the ranked shortlist")
+    g.add_argument("--market")
+    g.add_argument("--limit", type=int, default=30)
+    g.add_argument("--format", choices=["table", "md", "csv"], default="table")
+    g.add_argument("--min-confidence", type=float, default=0.0)
+    g.add_argument("--include-unknown", action="store_true",
+                   help="also list topics with too little history for a momentum phase")
+    g.add_argument("--as-of", type=date.fromisoformat)
     args = parser.parse_args(argv)
 
     commands = {
@@ -158,6 +218,9 @@ def main(argv: list[str] | None = None) -> int:
         "collect": lambda: _collect(args.source, args.market),
         "status": lambda: _status(args.limit),
         "watchlist": _watchlist,
+        "score": lambda: _score(args.as_of, args.market),
+        "gems": lambda: _gems(args.market, args.limit, args.format, args.min_confidence,
+                              args.include_unknown, args.as_of),
     }
     try:
         return asyncio.run(commands[args.cmd]())

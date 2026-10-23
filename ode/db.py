@@ -18,7 +18,7 @@ from typing import Any
 import asyncpg
 
 from ode.logging import get_logger
-from ode.models import RawSignal, Seed, WatchItem
+from ode.models import Probe, RawSignal, Seed, WatchItem
 
 log = get_logger(__name__)
 
@@ -510,6 +510,42 @@ class DbState:
 
     async def last_dates(self, market: str, source: str, metric: str) -> dict[str, date]:
         return await self.db.last_dates(market, source, metric)
+
+    async def observed_dates(self, market: str, source: str, metric: str
+                             ) -> dict[str, set[date]]:
+        rows = await self.db.pool.fetch(
+            """
+            SELECT t.topic_key, array_agg(tm.date) AS dates
+            FROM topic_metrics tm JOIN topics t ON t.id = tm.topic_id
+            WHERE tm.market = $1 AND tm.source = $2 AND tm.metric_name = $3
+              AND t.topic_key IS NOT NULL
+            GROUP BY t.topic_key
+            """,
+            market, source, metric,
+        )
+        return {r["topic_key"]: set(r["dates"]) for r in rows}
+
+    async def pending_probes(self, market: str, limit: int) -> list[Probe]:
+        rows = await self.db.pool.fetch(
+            "SELECT topic_key, query FROM probe_queue WHERE market = $1 AND probed_at IS NULL "
+            "ORDER BY score DESC NULLS LAST, queued_at LIMIT $2",
+            market, limit,
+        )
+        return [Probe(r["topic_key"], r["query"]) for r in rows]
+
+    async def probed(self, market: str) -> list[Probe]:
+        rows = await self.db.pool.fetch(
+            "SELECT topic_key, query FROM probe_queue WHERE market = $1 "
+            "AND probed_at IS NOT NULL ORDER BY score DESC NULLS LAST",
+            market,
+        )
+        return [Probe(r["topic_key"], r["query"]) for r in rows]
+
+    async def mark_probed(self, market: str, topic_key: str) -> None:
+        await self.db.pool.execute(
+            "UPDATE probe_queue SET probed_at = now() WHERE market = $1 AND topic_key = $2",
+            market, topic_key,
+        )
 
 
 class PgQuotaStore:

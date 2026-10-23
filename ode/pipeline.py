@@ -1,7 +1,7 @@
 """Harvest orchestration.
 
 `daily()` is the one entry point cron needs: apply schema -> discover ->
-collect, all under a Postgres advisory lock so overlapping jobs can't race.
+collect -> score, all under a Postgres advisory lock so overlapping jobs can't race.
 Every collector x market attempt is recorded in `collector_runs` as
 ok | partial | skipped | error, with item, error and quota counts. A failure
 in one collector or market never aborts the others.
@@ -140,9 +140,22 @@ async def discover(config: Config, secrets: Secrets, *, markets: list[str] | Non
         await db.close()
 
 
+async def score(config: Config, secrets: Secrets, *, as_of=None,
+                markets: list[str] | None = None) -> list[dict]:
+    from ode.scoring.scorer import Scorer
+
+    db = await Database.connect(secrets.database_url)
+    try:
+        async with db.harvest_lock():
+            return await Scorer(config, db).run(as_of or datetime.now(UTC).date(), markets)
+    finally:
+        await db.close()
+
+
 async def daily(config: Config, secrets: Secrets) -> dict[str, list[dict]]:
-    """Schema -> discovery -> collection, under one lock. What cron runs."""
+    """Schema -> discovery -> collection -> scoring, under one lock. What cron runs."""
     from ode.discovery import Discoverer
+    from ode.scoring.scorer import Scorer
 
     db = await Database.connect(secrets.database_url)
     try:
@@ -152,6 +165,7 @@ async def daily(config: Config, secrets: Secrets) -> dict[str, list[dict]]:
             async with http_client(config) as client:
                 disc = await Discoverer(config, client, db).run()
                 coll = await _collect(db, config, secrets, client, None, None)
-        return {"discovery": disc, "collect": coll}
+            scored = await Scorer(config, db).run(datetime.now(UTC).date())
+        return {"discovery": disc, "collect": coll, "scoring": scored}
     finally:
         await db.close()

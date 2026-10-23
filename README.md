@@ -11,7 +11,7 @@ money there?"
 
 ---
 
-## Status: Phase 1 (harvest + discovery) ✅
+## Status: Phases 1–2 (harvest, discovery, scoring) ✅
 
 | Area | What exists |
 |---|---|
@@ -23,7 +23,9 @@ money there?"
 | **Security** | DB bound to `127.0.0.1` with a password from `.env`; API keys redacted from every error/log; container runs as non-root. |
 | **Storage** | Postgres 16 + TimescaleDB hypertable, compression after 90 days, bulk COPY upserts, nightly `pg_dump` backups. |
 | **Ops** | `ode doctor` checks config, DB and every live API in seconds; every run recorded in `collector_runs` as ok / partial / skipped / error. |
-| **Tests** | 91 tests: parsers, HTTP behaviour, config validation, and integration tests on a real TimescaleDB including a full discovery → collection run. CI on every push. |
+| **Scoring** | Momentum by acceleration (spec model) with spike persistence and a significance test, demand / money / gap / competition, composite, confidence, saturation forecast, cross-language gaps. Top discovered topics are queued for a free YouTube check the next day. |
+| **Output** | `ode gems`: a ranked shortlist with a plain-language *why* for every row (terminal, Markdown, CSV); written daily to `reports/latest.md`. |
+| **Tests** | 133 tests: parsers, HTTP behaviour, config, momentum edge cases (sparse, single spikes, all-zeros, noise robustness), every score component, and integration tests on a real TimescaleDB (discovery → collection → scoring, no-lookahead guarantee). CI on every push. |
 
 Cost: **$0** beyond the VPS. Wikipedia, Wikidata and Hacker News need no keys;
 YouTube and Reddit are free and skip themselves cleanly until keys are set.
@@ -56,7 +58,32 @@ docker compose run --rm app ode watchlist
 crontab cron/crontab
 ```
 
-`ode doctor` mein sab `[OK]` aaye to system sahi chal raha hai. YouTube/Reddit
+`ode doctor` mein sab `[OK]` aaye to system sahi chal raha hai.
+
+### Roz kya dekhna hai
+
+```bash
+cat /opt/discovery-engine/reports/latest.md          # aaj ki gems list
+docker compose run --rm app ode gems                  # terminal mein
+docker compose run --rm app ode gems --market de-DE --min-confidence 0.5
+```
+
+Har gem ke saath **"why"** likha hota hai: kis phase mein hai (🚀 BREAKOUT /
+📈 GROWING / ⛰ PEAKING / ➖ STABLE / 📉 DECLINING), roz kitne log dhoond rahe
+hain, paisa kis raste se (SPONSOR / PRODUCT / APP / ADS), YouTube par kitna
+competition hai, aur kis language mein abhi article hi nahi hai.
+
+- **Score** = momentum × (demand, money, gap, competition ka mean). BREAKOUT 3×, DECLINING 0.3×.
+- **Confidence** 0–1: kitna asli data peeche hai. 0.4 se kam = sirf Wikipedia
+  data; YouTube probe ke baad barh jata hai.
+- **Saturation**: OPEN (12+ mahine) / NARROWING (~6) / CLOSING_FAST (~2,
+  abhi ya kabhi nahi). Ye YouTube ke 12 mahine ke uploads se banta hai, isliye
+  YouTube key lagne ke ~1 hafte baad aana shuru hota hai.
+- Pehle hafte zyada tar topics **UNKNOWN** honge (60 din ki history chahiye).
+  Pehla run 13 mahine ki Wikipedia history le aata hai, to asal mein ye foran
+  bharta hai; sirf naye discover hue topics ko waqt lagta hai.
+- Scores abhi **validated nahi** (Phase 7 backtest baqi hai). List ko shortlist
+  samjho jise aap khud verify karo, pakki prediction nahi. YouTube/Reddit
 ke `[warn]` sirf keys na hone ki wajah se hain.
 
 Naya code aaye to bas `./scripts/deploy.sh` chalao.
@@ -68,7 +95,9 @@ Naya code aaye to bas `./scripts/deploy.sh` chalao.
 | Command | What it does |
 |---|---|
 | `ode doctor` | Config + DB + one tiny live request to every API, parsed with the real parsers. Run after every deploy. |
-| `ode daily` | Schema → discover → collect, under a lock. What cron runs. |
+| `ode daily` | Schema → discover → collect → score, under a lock. What cron runs. |
+| `ode gems [--market de-DE] [--format table\|md\|csv] [--limit 30] [--min-confidence 0.5]` | The ranked shortlist with a *why* per row. `--include-unknown` also lists topics too new for a momentum phase. |
+| `ode score [--as-of YYYY-MM-DD]` | Re-score from stored data (only rows dated ≤ as-of are read). |
 | `ode discover [--market de-DE]` | Refresh watchlists only. |
 | `ode collect [--source wikipedia] [--market en-US]` | Collect only. |
 | `ode status` | Recent runs + a per-source/market data summary. |
@@ -121,6 +150,28 @@ works for any language automatically.
 Topic identity: `wd:Q…` (Wikidata entity), `seed:<key>` (your seeds; a seed
 absorbs its Wikidata entity's history if discovery saw it first).
 
+## Scoring model
+
+| Part | Range | How |
+|---|---|---|
+| Momentum | ×0.3–×3.0 | Spec phases on velocity (slope/mean) and acceleration (change in slope between halves). Short spikes removed by a trailing median (a rise must hold `spike_persist_days`); both half-slopes come from one quadratic fit on weekly medians, and the curvature must be ≥ 2 standard errors from zero to count — real Wikipedia noise otherwise flips steady growth into BREAKOUT. < 60 days or no demand → UNKNOWN (×1.0). |
+| Demand | 0–100 | Wikipedia 30-day mean, Reddit 90-day posts, HN 90-day stories; each log + rank normalized **within the market**; weights 0.5/0.3/0.2, renormalized over what exists. |
+| Money | 0–100 | Eligible paths (ADS always; PRODUCT/APP by intent keywords incl. German; SPONSOR for `audience: b2b` seeds or professional Wikidata classes); blended revenue per visitor, log-scaled. Comparison/review intent ×0.7. No affiliate path. |
+| Gap | 0–100 | Small-channel outlier strength (views/subs), no channel owning > 30% of top videos, share of unanswered Reddit posts. |
+| Competition | 1–100 | YouTube videos published on the topic in the last 180 days, log-normalized within the market. |
+| Composite | | momentum × weighted geometric mean(demand, money, gap, 101 − competition). Missing gap/competition = neutral 50 (lowers confidence, never zeros the score). |
+| Confidence | 0–1 | 40% history length + 60% how many parts rest on real data; UNKNOWN capped at 0.3. |
+| Saturation | | Spec formula on monthly YouTube uploads: last 3 months vs months 10–12 ago → OPEN / NARROWING / CLOSING_FAST; UNKNOWN until those months exist (never guessed). |
+
+Every scoring read goes through `MetricReader`, which requires an `as_of` date
+and selects only rows with `date <= as_of`, so the Phase-7 backtest can reuse
+the scorer with zero lookahead.
+
+**YouTube quota (10k/day free):** seeds every 3 days (~102 units each), up to 8
+probes per market (top discovered topics without YouTube data), then a one-off
+backfill of monthly upload counts (100 units per month per topic, each month
+fetched once). Hard-capped at 9,000/day; anything left over waits for tomorrow.
+
 ## Development
 
 ```bash
@@ -134,7 +185,7 @@ ODE_TEST_DATABASE_URL=postgresql://ode:<pw>@localhost:5432/ode pytest -q   # + D
 ## Roadmap
 
 1. **Harvest + discovery** ← done
-2. Momentum/acceleration + outlier scoring + composite v1
+2. **Momentum/acceleration + outlier scoring + composite v1** ← done
 3. FastAPI + dashboard
 4. DataForSEO verify layer (hard budget cap)
 5. RunPod embeddings + HDBSCAN clustering + cross-language arbitrage view

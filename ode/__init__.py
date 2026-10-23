@@ -1,6 +1,6 @@
 """Opportunity Discovery Engine (ODE).
 
-Cross-platform demand-arbitrage intelligence. Phase 1 = harvest + discovery layer.
+Cross-platform demand-arbitrage intelligence. Phases 1-2: harvest, discovery, scoring.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

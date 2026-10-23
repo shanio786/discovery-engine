@@ -24,6 +24,7 @@ wiki_project_overrides:
 # Wikidata. `queries` are per LANGUAGE — a seed with no query for a
 # language is not searched in that market (no English noise in de-DE).
 # `hn` is a short core term for Hacker News (long queries rarely match titles).
+# `audience: b2b` = professional audience -> SPONSOR monetization is realistic.
 # ------------------------------------------------------------------
 seeds:
   - key: home_assistant
@@ -36,11 +37,13 @@ seeds:
     wiki: N8n
     queries: {en: "n8n automation tutorial", de: "n8n automatisierung"}
     hn: "n8n"
+    audience: b2b
   - key: local_llm
     name: Local LLMs
     wiki: Large language model
     queries: {en: "run local llm", de: "lokales llm installieren"}
     hn: "local LLM"
+    audience: b2b
   - key: obsidian
     name: Obsidian
     wiki: Obsidian (software)
@@ -51,6 +54,7 @@ seeds:
     wiki: Self-hosting (web services)
     queries: {en: "self hosting server setup", de: "selbst hosten server"}
     hn: "self-hosting"
+    audience: b2b
   - key: raspberry_pi
     name: Raspberry Pi
     wiki: Raspberry Pi
@@ -61,6 +65,7 @@ seeds:
     wiki: Docker (software)
     queries: {en: "docker compose tutorial", de: "docker compose anleitung"}
     hn: "Docker"
+    audience: b2b
   - key: notion
     name: Notion
     wiki: Notion (productivity software)
@@ -71,16 +76,19 @@ seeds:
     wiki: Microsoft Excel
     queries: {en: "excel automation tutorial", de: "excel automatisieren"}
     hn: "Excel"
+    audience: b2b
   - key: power_bi
     name: Power BI
     wiki: Microsoft Power BI
     queries: {en: "power bi dashboard tutorial", de: "power bi dashboard erstellen"}
     hn: "Power BI"
+    audience: b2b
   - key: python_automation
     name: Python automation
     wiki: Python (programming language)
     queries: {en: "python automation script", de: "python automatisierung"}
     hn: "Python automation"
+    audience: b2b
   - key: stable_diffusion
     name: Stable Diffusion / AI images
     wiki: Stable Diffusion
@@ -161,6 +169,11 @@ reddit:
 
 youtube:
   max_results: 25
+  seed_refresh_days: 3          # re-search a seed at most every 3 days
+  max_probes_per_market: 8      # top discovered topics checked per run (~102 units each)
+  probe_refresh_days: 30        # re-probe a topic after this long
+  max_month_fills: 40           # monthly-upload backfill searches per run (100 units each)
+  saturation_months: 12
 
 # Hacker News is one global English audience: attribute it to ONE market so
 # en-US / en-GB never receive the same signal twice.
@@ -214,11 +227,55 @@ http:
   backoff_base_seconds: 2.0       # 2, 4, 8, 16
   circuit_breaker_failures: 10    # consecutive failures -> abort that run
 
-# Phase-2 scoring thresholds (unused until Phase 2; shape kept stable).
+# ------------------------------------------------------------------
+# Scoring (Phase 2). Scores are UNVALIDATED until the Phase-7 backtest
+# reports precision@20 — `ode gems` says so in its header.
+# ------------------------------------------------------------------
 scoring:
-  min_series_points: 60
-  spike_persist_days: 5
+  min_series_points: 60         # fewer daily points -> phase UNKNOWN, multiplier 1.0
+  min_mean_daily: 1.0           # average below this -> no real demand -> UNKNOWN
+  spike_persist_days: 5         # a rise must hold this many days to count
+  momentum_window_days: 180
+  fresh_within_days: 14         # only score topics with data this recent
   momentum:
-    velocity_threshold: 0.002
+    velocity_threshold: 0.002   # relative growth per day (~6%/month)
     breakout_accel: 0.3
     growing_accel: -0.1
+    accel_min_t: 2.0            # acceleration must be >= 2 standard errors from zero
+    multipliers: {BREAKOUT: 3.0, GROWING: 1.8, PEAKING: 0.6, STABLE: 1.0,
+                  DECLINING: 0.3, UNKNOWN: 1.0}
+  demand_weights: {wikipedia: 0.5, reddit: 0.3, hackernews: 0.2}
+  # Weighted geometric mean of demand, money, gap and openness (=101-competition),
+  # times the momentum multiplier. A missing component counts as neutral (50)
+  # instead of zeroing the score, and lowers confidence instead.
+  composite_weights: {demand: 1.0, money: 1.0, gap: 1.0, competition: 1.0}
+  outlier_cap: 50               # views/subs at which the outlier part of GAP maxes out
+  dominant_channel_share: 0.30  # one channel owning more than this = covered topic
+  probe_top_k: 8                # best unprobed topics per market queued for YouTube
+
+# ------------------------------------------------------------------
+# Monetization. No affiliate path by design. Revenue per visitor (USD).
+# ------------------------------------------------------------------
+monetization:
+  rpv: {SPONSOR: 0.25, PRODUCT: 0.045, APP: 0.030, ADS: 0.010}
+  secondary_weight: 0.2         # extra eligible paths add 20% of their RPV
+  product_keywords: [how to, tutorial, build, automate, automation, setup, template,
+                     anleitung, einrichten, vorlage, automatisieren, automatisierung,
+                     installieren, erstellen, projekt]
+  app_keywords: [tracker, calculator, planner, converter, monitor, rechner, planer]
+  # comparison / review intent was affiliate territory -> deprioritised
+  comparison_keywords: [" vs ", versus, best, review, comparison, alternative, vergleich, test]
+  comparison_penalty: 0.7
+  # Wikidata class (P31) -> eligible paths. Heuristic; extend as you learn.
+  class_paths:
+    Q7397: [PRODUCT, SPONSOR]      # software
+    Q166142: [PRODUCT, SPONSOR]    # application
+    Q9143: [PRODUCT, SPONSOR]      # programming language
+    Q193424: [PRODUCT]             # web service
+    Q35127: [PRODUCT]              # website
+    Q235557: [PRODUCT, APP]        # file format
+    Q11016: [PRODUCT]              # technology
+    Q2424752: [PRODUCT]            # product
+    Q68: [PRODUCT]                 # computer
+    Q28640: [PRODUCT, SPONSOR]     # profession
+    Q11862829: [PRODUCT]           # academic discipline

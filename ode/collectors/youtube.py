@@ -1,7 +1,10 @@
 """YouTube Data API v3 collector.
 
-Harvests outlier videos (views >> what the channel's sub count predicts) and
-channel stats per seed query/market. Enforces the persisted daily quota: it
+Per market, within the persisted daily quota, in priority order:
+  1. seeds that are due (outlier videos, channel stats, competing-video count),
+  2. probes: the scorer's best discovered topics that have no YouTube data yet,
+  3. a one-off backfill of monthly upload counts (the saturation forecast's
+     new-entrant signal; each completed month is fetched once, ever). Enforces the persisted daily quota: it
 reserves units BEFORE every call and stops cleanly if the cap would break,
 rather than failing mid-run. Self-skips when no API key is set.
 """
@@ -9,12 +12,13 @@ rather than failing mid-run. Self-skips when no API key is set.
 from __future__ import annotations
 
 import re
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from ode.collectors.base import BaseCollector
 from ode.http import CircuitOpenError
 from ode.models import Market, RawSignal, Seed
+from ode.scoring.components import completed_months
 
 SEARCH = "https://www.googleapis.com/youtube/v3/search"
 VIDEOS = "https://www.googleapis.com/youtube/v3/videos"
@@ -42,6 +46,16 @@ def _parse_iso(ts: str | None) -> datetime | None:
         return datetime.fromisoformat(ts)
     except ValueError:
         return None
+
+
+def parse_total_results(payload: Any) -> int | None:
+    """search.list pageInfo.totalResults (approximate count of matching videos)."""
+    if not isinstance(payload, dict):
+        return None
+    n = (payload.get("pageInfo") or {}).get("totalResults")
+    if isinstance(n, bool) or not isinstance(n, int) or n < 0:
+        return None
+    return n
 
 
 def build_signals(
@@ -127,68 +141,134 @@ class YouTubeCollector(BaseCollector):
         pairs = self.config.queries_for(market)
         return sorted(pairs, key=lambda p: (last.get(p[0].topic_key) or date.min, p[0].key))
 
-    async def collect(self, market: Market, since: datetime) -> list[RawSignal]:
-        key = self.secrets.youtube_api_key
+    def _base_params(self, market: Market, query: str) -> dict[str, Any]:
+        return {"key": self.secrets.youtube_api_key, "q": query, "part": "id", "type": "video",
+                "regionCode": market.region, "relevanceLanguage": market.language}
+
+    async def _search_topic(self, market: Market, topic_key: str, query: str,
+                            published_after: str, observed: date) -> list[RawSignal] | None:
+        """One topic: search + video stats + channel stats. None = quota exhausted."""
         cost = self.config.youtube_unit_cost
-        max_results = int(self.config.youtube.get("max_results", 25))
-        observed = datetime.now(UTC).date()
+        if not await self.charge_quota(cost["search"]):
+            self.notes.append(f"daily quota reached before '{query}'")
+            return None
+        search = await self.http.get_json(SEARCH, params={
+            **self._base_params(market, query), "order": "viewCount",
+            "maxResults": int(self.config.youtube.get("max_results", 25)),
+            "publishedAfter": published_after,
+        })
+        video_ids = [it["id"]["videoId"] for it in (search or {}).get("items", [])
+                     if (it.get("id") or {}).get("videoId")]
+        videos: dict[str, dict[str, Any]] = {}
+        channels: dict[str, dict[str, Any]] = {}
+        if video_ids:
+            if not await self.charge_quota(cost["videos"]):
+                self.notes.append("daily quota reached at videos.list")
+                return None
+            videos = self._parse_videos(await self.http.get_json(VIDEOS, params={
+                "key": self.secrets.youtube_api_key, "part": "statistics,snippet,contentDetails",
+                "id": ",".join(video_ids)}))
+            channel_ids = sorted({v["channel_id"] for v in videos.values() if v.get("channel_id")})
+            if channel_ids:
+                if not await self.charge_quota(cost["channels"]):
+                    self.notes.append("daily quota reached at channels.list")
+                    return None
+                channels = self._parse_channels(await self.http.get_json(CHANNELS, params={
+                    "key": self.secrets.youtube_api_key, "part": "statistics,snippet",
+                    "id": ",".join(channel_ids)}))
+        signals = build_signals(videos, channels, market=market.code, query=query,
+                                observed=observed, topic_key=topic_key)
+        total = parse_total_results(search)
+        if total is not None:  # competing videos published in the lookback window
+            signals.append(RawSignal("youtube", market.code, query, "youtube_total_results",
+                                     float(total), observed, topic_key=topic_key))
+        return signals
+
+    async def _month_uploads(self, market: Market, topic_key: str, query: str,
+                             month: date) -> list[RawSignal] | None:
+        """Videos published in one completed month (new-entrant proxy). None = quota."""
+        if not await self.charge_quota(self.config.youtube_unit_cost["search"]):
+            self.notes.append("daily quota reached during monthly backfill")
+            return None
+        nxt = date(month.year + (month.month == 12), month.month % 12 + 1, 1)
+        payload = await self.http.get_json(SEARCH, params={
+            **self._base_params(market, query), "maxResults": 0,
+            "publishedAfter": f"{month:%Y-%m-%d}T00:00:00Z",
+            "publishedBefore": f"{nxt:%Y-%m-%d}T00:00:00Z",
+        })
+        total = parse_total_results(payload)
+        if total is None:
+            raise ValueError(f"no totalResults for '{query}' {month:%Y-%m}")
+        return [RawSignal("youtube", market.code, query, "youtube_monthly_uploads", float(total),
+                          month, topic_key=topic_key)]
+
+    async def _guarded(self, label: str, coro) -> tuple[list[RawSignal], bool]:
+        """Run one unit of work. Returns (signals, keep_going)."""
+        try:
+            got = await coro
+        except CircuitOpenError as exc:
+            self.aborted = str(exc)
+            return [], False
+        except Exception as exc:  # noqa: BLE001 - one query must not kill the run
+            self.errors += 1
+            self.log.warning("youtube.item_failed", item=label, error=str(exc)[:300])
+            return [], True
+        if got is None:  # quota exhausted
+            return [], False
+        return got, True
+
+    async def collect(self, market: Market, since: datetime) -> list[RawSignal]:
+        yt = self.config.youtube
+        today = datetime.now(UTC).date()
         published_after = since.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         signals: list[RawSignal] = []
 
+        # 1) seeds that are due (least recently searched first)
+        last = await self.state.last_dates(market.code, self.name, "youtube_video_count")
+        refresh = timedelta(days=int(yt.get("seed_refresh_days", 3)))
+        go = True
         for seed, query in await self._ordered_queries(market):
-            if self.aborted:
-                break
-            if not await self.charge_quota(cost["search"]):
-                self.notes.append(f"daily quota reached before '{query}'")
-                self.log.warning("youtube.quota_reached", query=query)
-                break
-            try:
-                search = await self.http.get_json(
-                    SEARCH,
-                    params={
-                        "key": key, "q": query, "part": "id", "type": "video",
-                        "order": "viewCount", "maxResults": max_results,
-                        "regionCode": market.region, "relevanceLanguage": market.language,
-                        "publishedAfter": published_after,
-                    },
-                )
-                video_ids = [
-                    it["id"]["videoId"]
-                    for it in (search or {}).get("items", [])
-                    if (it.get("id") or {}).get("videoId")
-                ]
-                videos: dict[str, dict[str, Any]] = {}
-                channels: dict[str, dict[str, Any]] = {}
-                if video_ids:
-                    if not await self.charge_quota(cost["videos"]):
-                        self.notes.append("daily quota reached at videos.list")
-                        break
-                    videos = self._parse_videos(await self.http.get_json(
-                        VIDEOS,
-                        params={"key": key, "part": "statistics,snippet,contentDetails",
-                                "id": ",".join(video_ids)},
-                    ))
-                    channel_ids = sorted({v["channel_id"] for v in videos.values()
-                                          if v.get("channel_id")})
-                    if channel_ids:
-                        if not await self.charge_quota(cost["channels"]):
-                            self.notes.append("daily quota reached at channels.list")
-                            break
-                        channels = self._parse_channels(await self.http.get_json(
-                            CHANNELS,
-                            params={"key": key, "part": "statistics,snippet",
-                                    "id": ",".join(channel_ids)},
-                        ))
-            except CircuitOpenError as exc:
-                self.aborted = str(exc)
-                break
-            except Exception as exc:  # noqa: BLE001 - one query must not kill the run
-                self.errors += 1
-                self.log.warning("youtube.query_failed", query=query, error=str(exc)[:300])
+            seen = last.get(seed.topic_key)
+            if seen is not None and today - seen < refresh:
                 continue
-            signals.extend(build_signals(videos, channels, market=market.code, query=query,
-                                         observed=observed, topic_key=seed.topic_key))
-            self.log.debug("youtube.query_ok", query=query, videos=len(videos))
+            got, go = await self._guarded(query, self._search_topic(
+                market, seed.topic_key, query, published_after, today))
+            signals.extend(got)
+            if not go:
+                break
+
+        # 2) probes: the scorer's best discovered topics without YouTube data
+        if go:
+            for probe in await self.state.pending_probes(
+                    market.code, int(yt.get("max_probes_per_market", 8))):
+                got, go = await self._guarded(probe.query, self._search_topic(
+                    market, probe.topic_key, probe.query, published_after, today))
+                if got:
+                    signals.extend(got)
+                    await self.state.mark_probed(market.code, probe.topic_key)
+                if not go:
+                    break
+
+        # 3) monthly-upload backfill for saturation (each past month fetched once)
+        if go:
+            targets: dict[str, str] = {s.topic_key: q for s, q in self.config.queries_for(market)}
+            for probe in await self.state.probed(market.code):
+                targets.setdefault(probe.topic_key, probe.query)
+            have = await self.state.observed_dates(market.code, self.name,
+                                                   "youtube_monthly_uploads")
+            months = completed_months(today, int(yt.get("saturation_months", 12)))
+            budget = int(yt.get("max_month_fills", 40))
+            for key, query in targets.items():
+                missing = [m for m in months if m not in have.get(key, set())]
+                for month in missing[:budget]:
+                    got, go = await self._guarded(f"{query} {month:%Y-%m}",
+                                                  self._month_uploads(market, key, query, month))
+                    signals.extend(got)
+                    budget -= 1
+                    if not go or budget <= 0:
+                        break
+                if not go or budget <= 0:
+                    break
         return signals
 
     @staticmethod

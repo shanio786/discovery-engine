@@ -45,6 +45,7 @@ class Seed:
     wiki: str | None = None                       # English Wikipedia title
     queries: dict[str, str] = field(default_factory=dict)
     hn: str | None = None                         # short core term for Hacker News
+    audience: str | None = None                   # 'b2b' -> SPONSOR-eligible audience
 
     @property
     def hn_term(self) -> str:
@@ -53,6 +54,14 @@ class Seed:
     @property
     def topic_key(self) -> str:
         return f"seed:{self.key}"
+
+
+@dataclass(frozen=True)
+class Probe:
+    """A topic queued for a YouTube check, with the query to search."""
+
+    topic_key: str
+    query: str
 
 
 @dataclass(frozen=True)
