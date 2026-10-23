@@ -238,6 +238,10 @@ class Config:
         return dict(self._d.get("actions") or {})
 
     @property
+    def content(self) -> dict[str, Any]:
+        return dict(self._d.get("content") or {})
+
+    @property
     def dollars(self) -> dict[str, Any]:
         return dict(self._d.get("dollars") or {})
 

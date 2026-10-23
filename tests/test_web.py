@@ -120,3 +120,24 @@ async def test_output_is_escaped(db, monkeypatch):
     async with client(app) as c:
         page = (await c.get("/alerts")).text
     assert "<img src=x" not in page and "&lt;img src=x" in page
+
+
+async def test_content_page_track_and_untrack(db, monkeypatch):
+    monkeypatch.setattr(web, "datetime", _Day)
+    app = web.create_app(cfg(), secrets(), db)
+    async with client(app) as c:
+        page = await c.get("/content")
+        assert page.status_code == 200 and "Link daalo" in page.text
+        token = re.search(r'name="csrf" value="([^"]+)"', page.text).group(1)
+        r = await c.post("/track", data={"url": "https://youtu.be/BBBBBBBBBBB", "csrf": token},
+                         headers={"Origin": BASE})
+        assert r.status_code == 303
+        bad = await c.post("/track", data={"url": "nonsense", "csrf": token},
+                           headers={"Origin": BASE})
+        assert bad.status_code == 400
+        assert "youtu.be/BBBBBBBBBBB" in (await c.get("/content")).text
+        cid = await db.pool.fetchval("SELECT id FROM my_content")
+        r = await c.post("/untrack", data={"cid": str(cid), "csrf": token},
+                         headers={"Origin": BASE})
+        assert r.status_code == 303
+        assert not await db.pool.fetchval("SELECT active FROM my_content")

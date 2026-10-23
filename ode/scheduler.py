@@ -4,6 +4,7 @@ One long-running process (a restart-always Docker service) that runs every
 job on its own schedule, one at a time, forever:
 
     daily          at scheduler.daily_at         full cycle (discover, collect, score, briefs)
+    content        at scheduler.content_at       your videos / pages / apps: stats + verdicts
     reports        at scheduler.reports_at       reports/plan-latest.md, gems-latest.md/.csv
     plan_message   at scheduler.plan_message_at  Telegram: today's plan
     export         at scheduler.export_at        production pack -> n8n webhook
@@ -53,6 +54,7 @@ def jobs_from_config(config: Config) -> list[Job]:
     every = s.get("every") or {}
     return [
         Job("daily", at=parse_at(s.get("daily_at", "04:17"))),
+        Job("content", at=parse_at(s.get("content_at", "05:57"))),
         Job("reports", at=parse_at(s.get("reports_at", "06:37"))),
         Job("plan_message", at=parse_at(s.get("plan_message_at", "06:47"))),
         Job("export", at=parse_at(s.get("export_at", "06:52"))),
@@ -96,7 +98,7 @@ class Scheduler:
             "ON CONFLICT (job) DO UPDATE SET last_run = EXCLUDED.last_run", job, when)
 
     def _runner(self, name: str) -> Callable[[Database], Awaitable[dict]]:
-        from ode import backtest, export, pipeline
+        from ode import backtest, content, export, pipeline
         from ode.realtime import runner
 
         async def with_client(fn, db: Database) -> dict:
@@ -110,6 +112,7 @@ class Scheduler:
             "plan_message": lambda db: with_client(runner.plan_message_job, db),
             "reports": lambda db: with_client(runner.reports_job, db),
             "export": lambda db: with_client(export.export_job, db),
+            "content": lambda db: with_client(content.content_job, db),
             "backtest": lambda db: backtest.run_backtest(self.config, db),
             "hourly_wiki": lambda db: with_client(runner.hourly_job, db),
             "trends": lambda db: with_client(runner.trends_job, db),

@@ -101,7 +101,11 @@ async def build_plan(db: Database, config: Config, as_of: date, *,
         if a.platform in platform_mult:
             a.score = round(a.score * platform_mult[a.platform], 2)
     open_actions = [a for a in actions if a.action_id not in done]
-    plan = select_plan(open_actions, top_n=int(cfg.get("top_n", 25)),
+    from ode.content import double_down_actions
+
+    # your own winners first: making more of what already works is the surest money
+    more = [a for a in await double_down_actions(db, config, as_of) if a.action_id not in done]
+    plan = more + select_plan(open_actions, top_n=max(1, int(cfg.get("top_n", 25)) - len(more)),
                        per_market_max=int(cfg.get("per_market_max", 4)),
                        per_topic_max=int(cfg.get("per_topic_max", 3)),
                        rank_by=str(cfg.get("rank_by", "dollars")))

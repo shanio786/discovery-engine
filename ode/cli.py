@@ -16,6 +16,9 @@
     ode realtime hourly|trends|breakout|plan   # run one realtime job now
     ode done <id> [--status started|published|dropped] [--hours 3] [--note ...]
     ode result <id> --views 12000 --revenue 14.5   # totals so far: the engine learns
+    ode track <url> [--id <plan id>] [--platform BLOG] [--keyword "..."]   # your published item
+    ode content [--refresh]        # your items: views, verdict (WINNER / DROP ...), next 5 ideas
+    ode untrack <content id>
     ode worklog                    # what you did, what it earned, what was learned
     ode alerts [--limit 20]        # what the engine alerted (or would have)
     ode notify-test                # send a Telegram test message
@@ -331,6 +334,66 @@ async def _worklog(limit: int) -> int:
     return await _with_db(run)
 
 
+async def _track(url: str, action: str | None, platform: str | None, keyword: str | None,
+                 market: str | None) -> int:
+    from ode import content, worklog
+
+    async def run(db: Database) -> int:
+        try:
+            r = await content.add_content(db, url, action_id=action, platform=platform,
+                                          keyword=keyword, market=market)
+        except (content.ContentError, worklog.UnknownAction) as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        print(f"  tracking #{r['id']} {r['platform']} {r['url']}"
+              + (f" (keyword: {r['keyword']})" if r["keyword"] else ""))
+        return 0
+    return await _with_db(run)
+
+
+async def _content(refresh: bool) -> int:
+    import json
+
+    from ode import content
+
+    config, secrets = load_config(), get_secrets()
+
+    async def run(db: Database) -> int:
+        if refresh:
+            from ode.pipeline import http_client
+            async with http_client(config) as client:
+                r = await content.content_job(config, secrets, db, client)
+            print("  " + "  ".join(f"{k}={v}" for k, v in r.items()))
+        rows = await db.pool.fetch(
+            "SELECT c.*, (SELECT views FROM content_stats s WHERE s.content_id = c.id "
+            "AND views IS NOT NULL ORDER BY date DESC LIMIT 1) AS views "
+            "FROM my_content c WHERE active ORDER BY added_at DESC")
+        if not rows:
+            print("nothing tracked — after publishing: ode track <url> --id <plan id>")
+        for r in rows:
+            d = r["verdict_detail"] if isinstance(r["verdict_detail"], dict) else json.loads(
+                r["verdict_detail"] or "{}")
+            icon = content.ICON.get(r["verdict"] or "UNKNOWN", "")
+            print(f"  #{r['id']:<4} {icon} {r['verdict'] or '-':10} {r['platform']:8} "
+                  f"{(r['title'] or r['url'])[:60]}")
+            if d.get("text"):
+                print(f"         {d['text']}")
+            for s in (d.get("suggestions") or [])[:5]:
+                print(f"         → {s}")
+        return 0
+    return await _with_db(run)
+
+
+async def _untrack(cid: int) -> int:
+    from ode import content
+
+    async def run(db: Database) -> int:
+        ok = await content.untrack(db, cid)
+        print("  untracked" if ok else "  no such item")
+        return 0 if ok else 1
+    return await _with_db(run)
+
+
 async def _notify_test() -> int:
     from ode.notify import Notifier
     from ode.pipeline import http_client
@@ -500,6 +563,16 @@ def main(argv: list[str] | None = None) -> int:
     rs.add_argument("--views", type=int)
     rs.add_argument("--revenue", type=float, help="USD earned so far")
     rs.add_argument("--hours", type=float, help="hours you spent in total")
+    tr = sub.add_parser("track", help="track your published video / page / app")
+    tr.add_argument("url")
+    tr.add_argument("--id", dest="action", help="the plan item id it came from")
+    tr.add_argument("--platform", choices=["YOUTUBE", "SHORTS", "BLOG", "TOOLSITE", "APP"])
+    tr.add_argument("--keyword", help="Google keyword the page should rank for")
+    tr.add_argument("--market")
+    ct = sub.add_parser("content", help="your tracked content with verdicts")
+    ct.add_argument("--refresh", action="store_true", help="fetch fresh stats first")
+    ut = sub.add_parser("untrack", help="stop tracking a content item")
+    ut.add_argument("cid", type=int)
     wl = sub.add_parser("worklog", help="your work, results and what was learned")
     wl.add_argument("--limit", type=int, default=100)
     al = sub.add_parser("alerts", help="recent alerts")
@@ -528,6 +601,9 @@ def main(argv: list[str] | None = None) -> int:
         "done": lambda: _done(args.id, args.status, args.hours, args.note),
         "result": lambda: _result(args.id, args.views, args.revenue, args.hours),
         "worklog": lambda: _worklog(args.limit),
+        "track": lambda: _track(args.url, args.action, args.platform, args.keyword, args.market),
+        "content": lambda: _content(args.refresh),
+        "untrack": lambda: _untrack(args.cid),
         "notify-test": _notify_test,
         "gems": lambda: _gems(args.market, args.limit, args.format, args.min_confidence,
                               args.include_unknown, args.as_of),

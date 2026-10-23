@@ -174,7 +174,8 @@ def client_ip(request: Request, trust_proxy: bool) -> str:
 
 
 # ---------------------------------------------------------------- rendering
-NAV = [("/", "Aaj ka plan"), ("/worklog", "Mera kaam"), ("/gems", "Gems"), ("/alerts", "Alerts")]
+NAV = [("/", "Aaj ka plan"), ("/content", "Mera content"), ("/worklog", "Mera kaam"),
+       ("/gems", "Gems"), ("/alerts", "Alerts")]
 
 
 def page(title: str, body: str, path: str = "/") -> HTMLResponse:
@@ -298,7 +299,9 @@ async def item(request: Request) -> HTMLResponse:
         f'<label>Revenue (USD)</label><input name="revenue" inputmode="decimal" '
         f'value="{v("revenue_usd")}">'
         f'<label>Ghante lagaye</label><input name="hours" inputmode="decimal" '
-        f'value="{v("hours")}"><button>Save</button></form></div>')
+        f'value="{v("hours")}"><button>Save</button></form>'
+        f"<h3>Publish ho gaya? Link daalo — engine roz dekhega chal raha hai ya nahi</h3>"
+        f"{_track_form(request, aid)}</div>")
     return page("Item", "".join(parts))
 
 
@@ -361,6 +364,76 @@ async def result(request: Request) -> Response:
         return PlainTextResponse(str(exc), status_code=400)
     request.app.state.plan_cache = None
     return RedirectResponse(f"/item/{aid}", status_code=303)
+
+
+def _track_form(request: Request, aid: str = "") -> str:
+    hidden = f'<input type="hidden" name="id" value="{e(aid)}">' if aid else (
+        '<label>Plan item id (agar hai)</label><input name="id" maxlength="8">')
+    return (f'<form method="post" action="/track">{_csrf(request)}{hidden}'
+            '<label>Link (YouTube / Play Store / tumhara page)</label>'
+            '<input name="url" type="url" required placeholder="https://">'
+            '<label>Google keyword (sirf blog / tool page)</label><input name="keyword">'
+            '<button>Track karo</button></form>')
+
+
+async def content_page(request: Request) -> HTMLResponse:
+    from ode.content import ICON
+
+    rows = await request.app.state.db.pool.fetch(
+        "SELECT c.*, (SELECT views FROM content_stats s WHERE s.content_id = c.id AND views "
+        "IS NOT NULL ORDER BY date DESC LIMIT 1) AS views, (SELECT position FROM content_stats s "
+        "WHERE s.content_id = c.id AND position IS NOT NULL ORDER BY date DESC LIMIT 1) AS pos "
+        "FROM my_content c WHERE active ORDER BY (verdict = 'WINNER') DESC NULLS LAST, "
+        "added_at DESC")
+    cards = []
+    for r in rows:
+        d = r["verdict_detail"] if isinstance(r["verdict_detail"], dict) else json.loads(
+            r["verdict_detail"] or "{}")
+        sugg = "".join(f"<li>{e(s)}</li>" for s in (d.get("suggestions") or [])[:5])
+        cards.append(
+            f'<div class="card"><h2>{ICON.get(r["verdict"] or "UNKNOWN", "")} '
+            f'{e(r["verdict"] or "naya")} · {e(r["platform"])}</h2>'
+            f'<div><a href="{e(r["url"])}" rel="noopener noreferrer">'
+            f'{e(r["title"] or r["url"])}</a></div>'
+            f'<div class="mut">{e(d.get("text", "kal tak numbers aa jayenge"))}</div>'
+            + (f"<h3>Isi par agle 5</h3><ul>{sugg}</ul>" if sugg else "")
+            + f'<form class="inline" method="post" action="/untrack">{_csrf(request)}'
+            f'<input type="hidden" name="cid" value="{r["id"]}">'
+            f'<button class="sec">Track band karo</button></form></div>')
+    body = ('<h1>Mera content</h1><div class="card"><h3>Kuch publish kiya? Link daalo</h3>'
+            + _track_form(request) + "</div>" + ("".join(cards) or
+            '<div class="card">Abhi kuch track nahi ho raha.</div>'))
+    return page("Mera content", body, "/content")
+
+
+async def track(request: Request) -> Response:
+    from ode import content
+
+    try:
+        form = await _form(request)
+    except Forbidden:
+        return PlainTextResponse("Bad request (CSRF)", status_code=403)
+    try:
+        await content.add_content(request.app.state.db, str(form.get("url") or ""),
+                                  action_id=str(form.get("id") or "").strip() or None,
+                                  keyword=str(form.get("keyword") or "").strip() or None)
+    except (content.ContentError, worklog.UnknownAction) as exc:
+        return PlainTextResponse(str(exc), status_code=400)
+    request.app.state.plan_cache = None
+    return RedirectResponse("/content", status_code=303)
+
+
+async def untrack_view(request: Request) -> Response:
+    from ode import content
+
+    try:
+        form = await _form(request)
+    except Forbidden:
+        return PlainTextResponse("Bad request (CSRF)", status_code=403)
+    cid = _num(form.get("cid"), int)
+    if cid is not None:
+        await content.untrack(request.app.state.db, cid)
+    return RedirectResponse("/content", status_code=303)
 
 
 async def worklog_page(request: Request) -> HTMLResponse:
@@ -441,6 +514,8 @@ def create_app(config: Config, secrets: Secrets, db: Database | None = None) -> 
     app = Starlette(
         routes=[Route("/", home), Route("/item/{aid}", item), Route("/done", done, methods=["POST"]),
                 Route("/result", result, methods=["POST"]), Route("/worklog", worklog_page),
+                Route("/content", content_page), Route("/track", track, methods=["POST"]),
+                Route("/untrack", untrack_view, methods=["POST"]),
                 Route("/gems", gems_page), Route("/alerts", alerts_page), Route("/health", health)],
         middleware=[Middleware(Guard)], lifespan=lifespan)
     app.state.config = config

@@ -101,11 +101,13 @@ class Action:
     complaints: list[str] = field(default_factory=list)   # 1-star reviews of top apps
     formats: list[dict[str, Any]] = field(default_factory=list)  # proven viral formats
     dollars: Any = None            # scoring.dollars.Dollars: $/month range + hours
+    variant: str = ""              # e.g. "more:<content id>:<week>" for double-down items
 
     @property
     def action_id(self) -> str:
         """Stable id: `ode done <id>` / `ode result <id>`."""
-        return action_id(self.topic_id, self.market, self.platform, self.topic)
+        platform = f"{self.platform}:{self.variant}" if self.variant else self.platform
+        return action_id(self.topic_id, self.market, platform, self.topic)
 
     @property
     def headline(self) -> str:

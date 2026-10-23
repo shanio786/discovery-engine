@@ -281,6 +281,18 @@ miners:
     within_days: 365
     max_formulas: 5            # Gemini one-line format formula per run (GEMINI_API_KEY)
 
+# Your published content (`ode track <url>`): judged against YOUR normal at the
+# same age (median of your other items; these defaults until you have 3).
+content:
+  min_age_days: {YOUTUBE: 3, SHORTS: 2, APP: 7, BLOG: 14, TOOLSITE: 14}
+  drop_age_days: {YOUTUBE: 21, SHORTS: 10, APP: 45, BLOG: 75, TOOLSITE: 75}
+  default_7d: {YOUTUBE: 300, SHORTS: 1500, APP: 30, BLOG: 100, TOOLSITE: 100}
+  winner_ratio: 2.0            # >= 2x your normal = WINNER -> "isi par 5 aur banao"
+  drop_ratio: 0.3              # old, < 0.3x and stalled = DROP
+  serp_every_days: 7           # Google position of web pages (DataForSEO, in its budget)
+  serp_depth: 50
+  double_down_max: 3           # winners put on top of the plan
+
 # Dollar estimate per plan item ($/month at maturity, 3-6 months). Rough public
 # ranges; once you log >= 2 monetized results on a platform, YOUR numbers take over
 # gradually. Uncertain factors are (low, high) and combine in log space.
@@ -368,6 +380,7 @@ seasonal:
 # Always-on scheduler (`ode scheduler`): what runs when (UTC).
 scheduler:
   daily_at: "04:17"            # full cycle: discover -> collect -> score -> miners -> briefs
+  content_at: "05:57"          # your published content: stats + WINNER / DROP verdicts
   reports_at: "06:37"          # reports/plan-latest.md + gems-latest.md/.csv
   plan_message_at: "06:47"     # Telegram: today's plan
   export_at: "06:52"           # production pack -> N8N_WEBHOOK_URL + reports/pack-latest.json
